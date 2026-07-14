@@ -2,6 +2,7 @@ import os
 import re
 import ssl
 import socket
+import io  # مكتبة للتعامل مع الملفات في الذاكرة مباشرة دون الحاجة للديسك
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -106,13 +107,14 @@ def analyze_text(text: str):
         
     return {"text": text, "status": status, "risk_score": risk_score, "reasons": reasons if reasons else ["لم نكتشف كلمات أو عبارات احتيالية شائعة."]}
 
-# --- 3. منطق فحص الصور (Image Metadata & Software Signatures) ---
-def analyze_image(image_path: str):
+# --- 3. منطق فحص الصور (تم تعديله ليعمل بالذاكرة RAM) ---
+def analyze_image(image_bytes: bytes):
     reasons = []
     risk_score = 10
     
     try:
-        with Image.open(image_path) as img:
+        # قراءة الصورة مباشرة من البايتات المخزنة في الذاكرة
+        with Image.open(io.BytesIO(image_bytes)) as img:
             info = img.getexif()
             if info:
                 for tag, value in info.items():
@@ -153,7 +155,6 @@ def home(request: Request):
             target_file = "index.html.html"
             
     try:
-        # هنا تم تصحيح طريقة تمرير القاموس لتفادي مشكلة الـ tuple في إصدارات Jinja2 المختلفة
         return templates.TemplateResponse(request=request, name=target_file)
     except Exception as e:
         return HTMLResponse(
@@ -179,20 +180,14 @@ def api_scan_text(data: dict):
         raise HTTPException(status_code=400, detail="النص مطلوب")
     return analyze_text(data["text"])
 
+# تعديل هذا المسار ليقرأ بايتات الصورة ويمررها مباشرة للذاكرة
 @app.post("/api/scan-image")
 async def api_scan_image(file: UploadFile = File(...)):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="الملف المرفوع يجب أن يكون صورة")
         
-    temp_path = f"temp_{file.filename}"
-    with open(temp_path, "wb") as buffer:
-        buffer.write(await file.read())
-        
-    result = analyze_image(temp_path)
-    
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
-        
+    file_bytes = await file.read() # قراءة بايتات الملف
+    result = analyze_image(file_bytes) # معالجتها مباشرة بالذاكرة
     return result
 
 @app.post("/api/chat")
@@ -210,7 +205,5 @@ def api_chat(data: dict):
         
     return {"reply": reply}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
-    app = app
+# تأكيد توافقية تسمية المتغير مع بيئة Vercel
+app = app

@@ -1,7 +1,4 @@
 {
-  "features": {
-    "skipValidation": true
-  },
   "builds": [
     {
       "src": "app.py",
