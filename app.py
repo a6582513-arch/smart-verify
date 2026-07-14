@@ -20,6 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# إعداد المسار ليعمل محلياً وعلى Vercel بدون مشاكل
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates_path = os.path.join(BASE_DIR, "templates")
 templates = Jinja2Templates(directory=templates_path)
@@ -108,8 +109,10 @@ def analyze_image(image_bytes: bytes):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    try: return templates.TemplateResponse(request=request, name="index.html")
-    except Exception as e: return HTMLResponse(content=f"<h3>خطأ في العثور على index.html داخل مجلد templates</h3>", status_code=500)
+    try:
+        return templates.TemplateResponse(request=request, name="index.html")
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>خطأ: لم يتم العثور على index.html داخل مجلد templates أو أن المسار غير صحيح في Vercel.</h3>", status_code=500)
 
 @app.get("/api/stats")
 def get_stats(): return stats
@@ -131,8 +134,6 @@ def api_chat(data: dict):
     message = data.get("message", "").lower()
     if "رابط" in message: reply = "عند فحص الروابط نتحقق من شهادات SSL والكلمات المخادعة."
     elif "رسالة" in message: reply = "رسائل الاحتيال تعتمد على الهندسة الاجتماعية لإثارة الذعر أو الطمع."
-    elif "صورة" in message: reply = "نفحص ميتاداتا الصور لكشف أي تعديل برمجيات."
+    elif "صورة" in message: reply = "نقوم بفحص ميتاداتا الصور لكشف أي تعديل برمجيات."
     else: reply = "مرحباً بك في نظام عين الأمان."
     return {"reply": reply}
-
-app = app
