@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Verify - نظام التحقق الرقمي الذكي</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght=300;400;600;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        body { 
+            font-family: 'Cairo', sans-serif; 
+            background-color: #030712; 
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(217, 70, 239, 0.1) 0px, transparent 50%);
+            color: #f3f4f6; 
+        }
+
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        /* تأثيرات توهج النيون المستقبلي */
+        .neon-border-cyan {
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.3);
+            border: 1px solid rgba(6, 182, 212, 0.5);
+        }
+        .neon-border-purple {
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
+            border: 1px solid rgba(168, 85, 247, 0.4);
+        }
+        .neon-text-cyan {
+            text-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
+        }
+        .neon-text-purple {
+            text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+        }
+        
+        /* تأثير الزجاج المتوهج */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* حركة النبض للنيون لتعطي إحساساً بالحيوية */
+        @keyframes pulse-cyan {
+            0%, 100% { box-shadow: 0 0 15px rgba(6, 182, 212, 0.3); }
+            50% { box-shadow: 0 0 25px rgba(6, 182, 212, 0.6); }
+        }
+        .pulse-neon {
+            animation: pulse-cyan 3s infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+    <div class="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none z-0"></div>
+
+    <header class="border-b border-cyan-500/20 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="bg-cyan-950 border border-cyan-500 p-2.5 rounded-lg text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]">
+                    <i class="fa-solid fa-user-shield text-2xl"></i>
+                </div>
+                <div class="flex flex-col">
+                    <span class="text-2xl font-black tracking-widest text-white neon-text-cyan font-orbitron">SMART VERIFY</span>
+                    <span class="text-[9px] text-cyan-400 tracking-wider uppercase font-bold">Secure Core v2.0</span>
+                </div>
+            </div>
+            <nav class="hidden md:flex gap-6 text-sm font-semibold text-slate-400">
+                <a href="#scanner" class="hover:text-cyan-400 hover:neon-text-cyan transition duration-300">أدوات الفحص</a>
+                <a href="#stats-section" class="hover:text-cyan-400 hover:neon-text-cyan transition duration-300">الإحصائيات حية</a>
+                <a href="#assistant" class="hover:text-purple-400 hover:neon-text-purple transition duration-300">المستشار الذكي</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-8 w-full flex-grow space-y-12 z-10 relative">
+        
+        <section class="text-center py-10 space-y-4">
+            <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 text-xs font-bold mb-4 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+                <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                نظام التحليل الهيكلي والتحقق الرقمي
+            </div>
+            <h1 class="text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-purple-500 pb-2 font-orbitron">
+                SMART VERIFY
+            </h1>
+            <p class="text-slate-400 text-base md:text-lg max-w-2xl mx-auto leading-relaxed mt-2">
+                حلول رقمية متطورة لكشف وتتبع التهديدات السيبرانية، الروابط الخبيثة، والرسائل الاحتيالية مع تشريح البصمة البرمجية للصور.
+            </p>
+        </section>
+
+        <section id="stats-section" class="grid grid-cols-2 md:grid-cols-4 gap-5">
+            <div class="glass-panel border-cyan-500/10 p-6 rounded-2xl text-center hover:border-cyan-500/40 transition duration-500 group">
+                <div class="text-cyan-400 text-3xl mb-2 group-hover:scale-110 transition duration-300"><i class="fa-solid fa-server"></i></div>
+                <div id="stat-total" class="text-3xl font-extrabold text-white">0</div>
+                <div class="text-slate-500 text-xs mt-1 font-semibold uppercase tracking-wider">إجمالي الفحوصات</div>
+            </div>
+            <div class="glass-panel border-emerald-500/10 p-6 rounded-2xl text-center hover:border-emerald-500/40 transition duration-500 group">
+                <div class="text-emerald-400 text-3xl mb-2 group-hover:scale-110 transition duration-300"><i class="fa-solid fa-shield-halved"></i></div>
+                <div id="stat-safe" class="text-3xl font-extrabold text-white">0</div>
+                <div class="text-slate-500 text-xs mt-1 font-semibold uppercase tracking-wider">سليمة وآمنة</div>
+            </div>
+            <div class="glass-panel border-rose-500/10 p-6 rounded-2xl text-center hover:border-rose-500/40 transition duration-500 group">
+                <div class="text-rose-400 text-3xl mb-2 group-hover:scale-110 transition duration-300"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div id="stat-danger" class="text-3xl font-extrabold text-white">0</div>
+                <div class="text-slate-500 text-xs mt-1 font-semibold uppercase tracking-wider">تهديدات معزولة</div>
+            </div>
+            <div class="glass-panel border-purple-500/10 p-6 rounded-2xl text-center hover:border-purple-500/40 transition duration-500 group">
+                <div class="text-purple-400 text-3xl mb-2 group-hover:scale-110 transition duration-300"><i class="fa-solid fa-bolt"></i></div>
+                <div id="stat-ratio" class="text-3xl font-extrabold text-white">0%</div>
+                <div class="text-slate-500 text-xs mt-1 font-semibold uppercase tracking-wider">معدل التهديد العام</div>
+            </div>
+        </section>
+
+        <section id="scanner" class="glass-panel rounded-3xl p-6 md:p-8 pulse-neon">
+            <div class="flex border-b border-slate-800 mb-8 gap-2">
+                <button onclick="switchTab('url-tab')" id="btn-url-tab" class="tab-btn pb-3 px-6 text-cyan-400 border-b-2 border-cyan-500 font-bold focus:outline-none transition duration-300 neon-text-cyan">
+                    <i class="fa-solid fa-circle-nodes ml-2"></i>تحليل رابط (URL)
+                </button>
+                <button onclick="switchTab('text-tab')" id="btn-text-tab" class="tab-btn pb-3 px-6 text-slate-400 border-b-2 border-transparent hover:text-slate-200 focus:outline-none transition duration-300">
+                    <i class="fa-solid fa-code-compare ml-2"></i>فحص الرسائل
+                </button>
+                <button onclick="switchTab('image-tab')" id="btn-image-tab" class="tab-btn pb-3 px-6 text-slate-400 border-b-2 border-transparent hover:text-slate-200 focus:outline-none transition duration-300">
+                    <i class="fa-solid fa-camera-retro ml-2"></i>الميتا داتا للصور
+                </button>
+            </div>
+
+            <div id="url-tab" class="tab-content space-y-4">
+                <div class="space-y-2">
+                    <label class="block text-slate-400 text-sm font-semibold">مسار الرابط المطلوب تشريحه فنيّاً:</label>
+                    <div class="flex flex-col md:flex-row gap-3">
+                        <input type="text" id="url-input" placeholder="https://external-unknown-node.com" class="bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3.5 flex-grow focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 text-left text-cyan-300 placeholder-slate-700" dir="ltr">
+                        <button onclick="scanURL()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                            <i class="fa-solid fa-fingerprint"></i> بدء التشريح الرقمي
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="text-tab" class="tab-content hidden space-y-4">
+                <div class="space-y-2">
+                    <label class="block text-slate-400 text-sm font-semibold">محتوى النص المراد معالجته لغوياً:</label>
+                    <textarea id="text-input" rows="4" placeholder="مثال: عزيزي العميل، تم تجميد حسابك البنكي مؤقتاً... الرجاء الدخول للرابط أدناه..." class="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-4 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 text-slate-300 placeholder-slate-700"></textarea>
+                    <button onclick="scanText()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                        <i class="fa-solid fa-brain"></i> فك البصمة اللغوية
+                    </button>
+                </div>
+            </div>
+
+            <div id="image-tab" class="tab-content hidden space-y-4">
+                <div class="space-y-2">
+                    <label class="block text-slate-400 text-sm font-semibold">تحميل ملف الصورة لفحص الميتاداتا الهيكلية EXIF:</label>
+                    <div class="border border-dashed border-slate-800 rounded-xl p-8 text-center bg-slate-950/50 hover:bg-slate-950 hover:border-cyan-500/50 transition duration-300 relative group">
+                        <input type="file" id="image-input" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="displayFileName()">
+                        <i class="fa-solid fa-circle-nodes text-slate-700 text-4xl mb-3 group-hover:text-cyan-500 transition duration-300"></i>
+                        <p class="text-slate-300 font-semibold text-sm" id="file-label">اسحب ملف الصورة الرقمي أو انقر هنا لتصفح الجهاز</p>
+                        <p class="text-slate-600 text-xs mt-1">PNG, JPEG, WEBP - فحص الميتاداتا لبرامج الفوتوشوب</p>
+                    </div>
+                    <button onclick="scanImage()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                        <i class="fa-solid fa-radar"></i> فحص الميتاداتا العميقة
+                    </button>
+                </div>
+            </div>
+
+            <div id="result-box" class="hidden mt-10 border-t border-slate-800 pt-8 space-y-4">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <span class="w-1.5 h-4 bg-cyan-400 rounded-full"></span> تقرير التشخيص الفني:
+                </h3>
+                <div id="result-card" class="p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-500 uppercase tracking-wider">تقييم سلامة العنصر:</span>
+                            <span id="res-status" class="px-3 py-1 rounded-full text-xs font-bold">انتظار البيانات</span>
+                        </div>
+                        <div class="text-slate-300 text-sm font-semibold">تفاصيل الكشف والتحليل الهيكلي:</div>
+                        <ul id="res-reasons" class="list-none text-sm text-slate-400 space-y-2">
+                            </ul>
+                    </div>
+                    <div class="text-center bg-slate-950 border p-6 rounded-2xl shrink-0 min-w-[170px] relative overflow-hidden group">
+                        <span class="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">نسبة التهديد المكتشفة</span>
+                        <span id="res-score" class="text-4xl font-black text-cyan-400 neon-text-cyan">0%</span>
+                        <div class="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 to-indigo-500"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="assistant" class="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-900/40 border border-slate-800 rounded-3xl p-6 md:p-8">
+            <div class="md:col-span-1 space-y-4 flex flex-col justify-center">
+                <div class="text-purple-400 text-4xl"><i class="fa-solid fa-user-gear"></i></div>
+                <h3 class="text-2xl font-black text-white neon-text-purple font-orbitron">Smart Assistant</h3>
+                <p class="text-slate-400 text-sm leading-relaxed">اسأل مستشارك الأمني المدمج والمدعوم بالذكاء الاصطناعي عن أي حيلة احتيالية، أسلوب تصيد، أو طريقة تفادي للثغرات الحالية للحصول على توجيه فوري.</p>
+            </div>
+            <div class="md:col-span-2 flex flex-col h-[320px] bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-inner">
+                <div id="chat-box" class="flex-grow p-4 overflow-y-auto space-y-4 text-xs md:text-sm">
+                    <div class="bg-slate-900/60 border border-slate-800 text-slate-300 p-3.5 rounded-2xl rounded-tr-none max-w-[85%] leading-relaxed shadow-sm">
+                         مرحباً بك! أنا المستشار الافتراضي لنظام Smart Verify. كيف يمكنني مساعدتك في تعزيز دفاعاتك الرقمية اليوم؟
+                    </div>
+                </div>
+                <div class="p-3 border-t border-slate-800/80 flex gap-2 bg-slate-950/40">
+                    <input type="text" id="chat-input" placeholder="اكتب سؤالك الأمني هنا..." class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex-grow focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-slate-300 text-sm placeholder-slate-700">
+                    <button onclick="sendChatMessage()" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl text-sm font-black transition duration-300 shadow-[0_0_15px_rgba(168,85,247,0.4)]">إرسال</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="border-t border-slate-900 bg-slate-950 py-6 text-center text-slate-600 text-[11px] tracking-wider uppercase">
+        <p>© 2026 Smart Verify. جميع الحقوق والعمليات التشغيلية مشفرة ومحمية.</p>
+    </footer>
+
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('text-cyan-400', 'border-cyan-500', 'neon-text-cyan');
+                btn.classList.add('text-slate-400', 'border-transparent');
+            });
+            document.getElementById(tabId).classList.remove('hidden');
+            const activeBtn = document.getElementById('btn-' + tabId);
+            activeBtn.classList.remove('text-slate-400', 'border-transparent');
+            activeBtn.classList.add('text-cyan-400', 'border-cyan-500', 'neon-text-cyan');
+        }
+
+        function displayFileName() {
+            const input = document.getElementById('image-input');
+            const label = document.getElementById('file-label');
+            if(input.files.length > 0) {
+                label.innerText = `الملف المرفق: ${input.files[0].name}`;
+                label.classList.add('text-cyan-400');
+            }
+        }
+
+        async function refreshStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                document.getElementById('stat-total').innerText = data.total_scans;
+                document.getElementById('stat-safe').innerText = data.safe_count;
+                document.getElementById('stat-danger').innerText = data.danger_count;
+                const ratio = data.total_scans > 0 ? Math.round((data.danger_count / data.total_scans) * 100) : 0;
+                document.getElementById('stat-ratio').innerText = ratio + "%";
+            } catch(e) { console.error("Error updating stats", e); }
+        }
+
+        function displayResults(status, riskScore, reasons) {
+            const resultBox = document.getElementById('result-box');
+            const resStatus = document.getElementById('res-status');
+            const resScore = document.getElementById('res-score');
+            const resReasons = document.getElementById('res-reasons');
+            const resultCard = document.getElementById('result-card');
+
+            resultBox.classList.remove('hidden');
+            resStatus.innerText = status;
+            resScore.innerText = riskScore + "%";
+            
+            resReasons.innerHTML = '';
+            reasons.forEach(r => {
+                const li = document.createElement('li');
+                li.className = "flex items-start gap-2 text-slate-400 text-xs md:text-sm";
+                li.innerHTML = `<span class="text-cyan-500 mt-1">✦</span> <span>${r}</span>`;
+                resReasons.appendChild(li);
+            });
+
+            if (riskScore >= 50) {
+                resStatus.className = "px-3 py-1 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-[0_0_10px_rgba(239,68,68,0.2)]";
+                resScore.className = "text-4xl font-black text-rose-500 neon-text-purple";
+                resultCard.className = "p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-rose-950/20 border border-rose-500/20 shadow-[0_0_15px_rgba(239,68,68,0.05)]";
+            } else {
+                resStatus.className = "px-3 py-1 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]";
+                resScore.className = "text-4xl font-black text-emerald-400 neon-text-cyan";
+                resultCard.className = "p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-emerald-950/20 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]";
+            }
+            refreshStats();
+            
+            resultBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        async function scanURL() {
+            const urlInput = document.getElementById('url-input').value.trim();
+            if(!urlInput) return alert("الرجاء توفير الرابط أولاً ليتم التحليل!");
+            try {
+                const res = await fetch('/api/scan-url', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url: urlInput})
+                });
+                const data = await res.json();
+                displayResults(data.status, data.risk_score, data.reasons);
+            } catch(e) { alert("فشل الاتصال بخادم المعالجة الأساسي"); }
+        }
+
+        async function scanText() {
+            const textInput = document.getElementById('text-input').value.trim();
+            if(!textInput) return alert("الرجاء توفير الرسالة أولاً ليتم فك البصمة!");
+            try {
+                const res = await fetch('/api/scan-text', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: textInput})
+                });
+                const data = await res.json();
+                displayResults(data.status, data.risk_score, data.reasons);
+            } catch(e) { alert("فشل الاتصال بخادم المعالجة الأساسي"); }
+        }
+
+        async function scanImage() {
+            const fileInput = document.getElementById('image-input');
+            if(fileInput.files.length === 0) return alert("الرجاء إرفاق ملف الصورة أولاً لمعاينتها!");
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+            try {
+                const res = await fetch('/api/scan-image', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                displayResults(data.status, data.risk_score, data.reasons);
+            } catch(e) { alert("حدث خطأ أثناء تشريح الصورة ومراجعة الميتاداتا الخاصة بها"); }
+        }
+
+        async function sendChatMessage() {
+            const chatInput = document.getElementById('chat-input');
+            const msg = chatInput.value.trim();
+            if(!msg) return;
+
+            const chatBox = document.getElementById('chat-box');
+            
+            const userDiv = document.createElement('div');
+            userDiv.className = "bg-purple-600 text-white p-3.5 rounded-2xl rounded-tl-none max-w-[85%] mr-auto text-left shadow-md font-semibold";
+            userDiv.innerText = msg;
+            chatBox.appendChild(userDiv);
+            chatInput.value = '';
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg})
+                });
+                const data = await res.json();
+                
+                const serverDiv = document.createElement('div');
+                serverDiv.className = "bg-slate-900/80 border border-slate-800 text-slate-300 p-3.5 rounded-2xl rounded-tr-none max-w-[85%] leading-relaxed shadow-sm";
+                serverDiv.innerText = data.reply;
+                chatBox.appendChild(serverDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } catch(e) { console.error("Error communicating with chatbot", e); }
+        }
+
+        window.onload = refreshStats;
+    </script>
+</body>
+</html>
