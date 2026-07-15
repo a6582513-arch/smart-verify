@@ -3,15 +3,20 @@ import re
 import ssl
 import socket
 import io
+import random
 import pathlib
+import requests
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from PIL import Image
 from PIL.ExifTags import TAGS
+# استيراد مكتبة التحقق من جوجل
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
-app = FastAPI(title="منصة عين الأمان للتحقق الرقمي")
+app = FastAPI(title="منصة Smart Verify للتحقق الرقمي")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,46 +30,168 @@ app.add_middleware(
 BASE_DIR = pathlib.Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# معرف العميل الخاص بك الذي حصلت عليه من جوجل كلود
+GOOGLE_CLIENT_ID = "873065114114-g9a11ts2a0nj41pulqg8v25dfpo22dec.apps.googleusercontent.com"
+
 stats = {
     "total_scans": 0, "safe_count": 0, "danger_count": 0,
     "phishing_urls": 0, "scam_texts": 0, "manipulated_images": 0
 }
 
+# ذاكرة مؤقتة لحفظ أكواد التحقق المرسلة عبر الواتساب
+temp_whatsapp_codes = {}
+ULTRAMSG_INSTANCE_ID = "instanceXXXXX"
+ULTRAMSG_TOKEN = "your_token_here"
+
+# ============================================================
+#  قوائم الروابط المختصرة والنطاقات الاحتيالية المعروفة محلياً
+# ============================================================
+
+# أشهر خدمات اختصار الروابط - يتم فك تشفيرها تلقائياً قبل التحليل
+SHORTENER_DOMAINS = {
+    "bit.ly", "tinyurl.com", "goo.gl", "t.co", "ow.ly", "is.gd", "buff.ly",
+    "adf.ly", "cutt.ly", "rb.gy", "tiny.cc", "shorte.st", "rebrand.ly",
+    "clck.ru", "shorturl.at", "s.id", "v.gd", "qr.ae", "tr.im", "cli.re",
+    "lnkd.in", "soo.gd", "u.to", "shrtco.de", "1url.com", "tny.im"
+}
+
+# قائمة سوداء محلية توضيحية لأشهر أنماط النطاقات الاحتيالية المعروفة
+# (تُستخدم كطبقة فحص إضافية سريعة لا تعتمد على استدعاء خارجي)
+BLACKLIST_DOMAINS = {
+    "paypa1.com", "paypal-secure-login.com", "paypal-account-verify.com",
+    "amaz0n-verify.com", "amazon-account-update.com",
+    "netflix-billing-update.com", "netflix-account-verify.net",
+    "apple-id-verify-account.com", "appleid-support-verify.com",
+    "bank-of-america-alert.com", "wellsfargo-alert-secure.com",
+    "chase-bank-secure-login.com", "update-account-security.info",
+    "signin-ebay-secure.com", "instagram-verify-account.net",
+    "facebook-security-check.info", "microsoft-support-alert.com",
+    "whatsapp-verify-account.net", "secure-bankofamerica.com",
+    "google-account-recovery-alert.com", "verify-your-account-now.com"
+}
+
+
+def expand_url(url: str, max_redirects: int = 5):
+    """
+    يحاول فك تشفير الرابط المختصر عبر تتبّع سلسلة إعادة التوجيه HTTP بالكامل،
+    ويعيد الرابط النهائي الحقيقي بالإضافة لسلسلة إعادة التوجيه التي مر بها.
+    """
+    redirect_chain = [url]
+    try:
+        session = requests.Session()
+        session.max_redirects = max_redirects
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; SmartVerifyBot/1.0)"}
+
+        response = session.head(url, allow_redirects=True, timeout=5, headers=headers)
+        # بعض الخوادم لا تدعم HEAD بشكل صحيح، نجرب GET كخطة بديلة
+        if response.status_code >= 400:
+            response = session.get(url, allow_redirects=True, timeout=5, headers=headers, stream=True)
+
+        for r in response.history:
+            if r.url not in redirect_chain:
+                redirect_chain.append(r.url)
+
+        final_url = response.url
+        if final_url not in redirect_chain:
+            redirect_chain.append(final_url)
+
+        return {
+            "final_url": final_url,
+            "redirect_chain": redirect_chain,
+            "was_expanded": final_url != url,
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "final_url": url,
+            "redirect_chain": redirect_chain,
+            "was_expanded": False,
+            "error": str(e)
+        }
+
+
+def get_domain(url: str) -> str:
+    return url.split("//")[-1].split("/")[0].split(":")[0].lower()
+
+
 def analyze_url(url: str):
     reasons = []
     risk_score = 0
-    if not url.startswith(("http://", "https://")): 
+    original_input = url
+
+    if not url.startswith(("http://", "https://")):
         url = "http://" + url
+
+    initial_domain = get_domain(url)
+    clean_initial = initial_domain[4:] if initial_domain.startswith("www.") else initial_domain
+
+    expansion_info = {"was_expanded": False, "redirect_chain": [url], "error": None}
+
+    # --- 1) توسيع وفك الروابط المختصرة قبل أي تحليل آخر ---
+    if clean_initial in SHORTENER_DOMAINS:
+        expansion_info = expand_url(url)
+        if expansion_info["was_expanded"]:
+            risk_score += 10
+            reasons.append(
+                f"تم رصد رابط مختصر (Shortened URL)، وبعد فك تشفيره تبيّن أنه يُعيد التوجيه فعلياً إلى نطاق مختلف: {get_domain(expansion_info['final_url'])}"
+            )
+        if expansion_info["error"]:
+            risk_score += 20
+            reasons.append("تعذّر فكّ تشفير الرابط المختصر أو تتبع مساره الحقيقي، وهذا بحد ذاته مؤشر يستدعي الحذر.")
+        url = expansion_info["final_url"]
+
     if url.startswith("http://"):
         risk_score += 30
         reasons.append("الرابط يستخدم بروتوكول HTTP غير المشفر والمكشوف للتنصت.")
+
+    domain = get_domain(url)
+    clean_domain = domain[4:] if domain.startswith("www.") else domain
+
+    # --- 2) فحص القائمة السوداء المحلية لأشهر النطاقات الاحتيالية ---
+    if clean_domain in BLACKLIST_DOMAINS or domain in BLACKLIST_DOMAINS:
+        risk_score += 60
+        reasons.append(f"⚠️ النطاق ({clean_domain}) مسجّل ضمن القائمة السوداء المحلية لأشهر نطاقات التصيّد الاحتيالي المعروفة.")
+
+    # --- 3) الكلمات الدلالية المستخدمة في التصيد ---
     phishing_keywords = ["login", "signin", "bank", "secure", "update", "verify", "free-gift", "rewards", "netflix", "paypal"]
     found_keywords = [kw for kw in phishing_keywords if kw in url.lower()]
     if found_keywords:
         risk_score += 40
         reasons.append(f"الرابط يحتوي على كلمات دلالية تستخدم في التصيد الإلكتروني: ({', '.join(found_keywords)})")
+
     if len(url) > 75:
         risk_score += 15
         reasons.append("الرابط طويل بشكل غير طبيعي، وغالباً ما يُستخدم لإخفاء النطاق الحقيقي.")
-    domain = url.split("//")[-1].split("/")[0]
+
+    # --- 4) التحقق من شهادة SSL على النطاق النهائي بعد فك التشفير ---
     try:
         context = ssl.create_default_context()
         with socket.create_connection((domain, 443), timeout=3) as sock:
-            with context.wrap_socket(sock, server_hostname=domain) as ssock: 
+            with context.wrap_socket(sock, server_hostname=domain) as ssock:
                 ssock.getpeercert()
     except Exception:
         risk_score += 15
         reasons.append("فشل التحقق من شهادة الأمان SSL للنطاق أو أن الموقع غير متصل بالإنترنت حالياً.")
-    
+
     risk_score = min(risk_score, 100)
     status = "خطر" if risk_score >= 50 else "آمن مبدئياً"
     stats["total_scans"] += 1
     if status == "خطر":
         stats["danger_count"] += 1
         stats["phishing_urls"] += 1
-    else: 
+    else:
         stats["safe_count"] += 1
-    return {"url": url, "status": status, "risk_score": risk_score, "reasons": reasons if reasons else ["لا توجد مؤشرات خطر واضحة."]}
+
+    return {
+        "url": url,
+        "original_url": original_input,
+        "was_expanded": expansion_info["was_expanded"],
+        "redirect_chain": expansion_info["redirect_chain"],
+        "status": status,
+        "risk_score": risk_score,
+        "reasons": reasons if reasons else ["لا توجد مؤشرات خطر واضحة."]
+    }
+
 
 def analyze_text(text: str):
     reasons = []
@@ -77,7 +204,7 @@ def analyze_text(text: str):
         r"يرجى الضغط على الرابط": "توجيه صريح ومشبوه لزيارة روابط خارجية."
     }
     for pattern, reason in scam_patterns.items():
-        if re.search(pattern, text): 
+        if re.search(pattern, text):
             risk_score += 35
             reasons.append(reason)
     risk_score = min(risk_score, 100)
@@ -86,9 +213,10 @@ def analyze_text(text: str):
     if status == "احتيال محتمل":
         stats["danger_count"] += 1
         stats["scam_texts"] += 1
-    else: 
+    else:
         stats["safe_count"] += 1
     return {"text": text, "status": status, "risk_score": risk_score, "reasons": reasons if reasons else ["لم نكتشف عبارات احتيالية شائعة."]}
+
 
 def analyze_image(image_bytes: bytes):
     reasons = []
@@ -114,45 +242,206 @@ def analyze_image(image_bytes: bytes):
     if status == "معدلة/مشبوهة":
         stats["danger_count"] += 1
         stats["manipulated_images"] += 1
-    else: 
+    else:
         stats["safe_count"] += 1
     return {"status": status, "risk_score": risk_score, "reasons": reasons}
 
+
+# ============================================================
+#  المستشار الذكي المطور - سيناريوهات الطوارئ الأمنية
+# ============================================================
+
+EMERGENCY_SCENARIOS = [
+    {
+        "id": "hacked_account",
+        "keywords": ["تم اختراقي", "اخترقوا حسابي", "تم اختراق حسابي", "هكر حسابي", "سرقوا حسابي", "حسابي مخترق", "اخترق حسابي"],
+        "title": "🚨 حالة طوارئ: اختراق حساب",
+        "steps": [
+            "غيّر كلمة المرور فوراً من جهاز آخر تثق به إن أمكن.",
+            "فعّل خاصية التحقق بخطوتين (2FA) إن لم تكن مفعّلة مسبقاً.",
+            "راجع سجل الدخول الأخير على الحساب وأنهِ كل الجلسات النشطة غير المعروفة.",
+            "تحقق من عدم تغيير البريد الإلكتروني أو رقم الاسترداد المرتبط بالحساب.",
+            "بلّغ الجهة المعنية (البنك أو المنصة) فوراً إذا كان الحساب مالياً أو حساساً."
+        ]
+    },
+    {
+        "id": "sent_money",
+        "keywords": ["حولت فلوس", "حولت مبلغ", "أرسلت فلوس لمحتال", "دفعت لمحتال", "سرقوا فلوسي", "احتالوا علي", "حولت لهم فلوس"],
+        "title": "🚨 حالة طوارئ: تحويل مالي لمحتال",
+        "steps": [
+            "اتصل ببنكك فوراً وأبلغ عن العملية الاحتيالية لمحاولة إيقافها أو استرجاعها.",
+            "وثّق كل تفاصيل العملية (الوقت، المبلغ، رقم الحساب المستلم إن توفر).",
+            "بلّغ الجهات الرسمية المختصة بالجرائم الإلكترونية في بلدك.",
+            "غيّر بيانات الدخول لتطبيق البنك والبريد الإلكتروني المرتبط فوراً.",
+            "احذر من محاولات 'استرداد الأموال' الوهمية التي قد يتواصل بها محتالون آخرون بعدها."
+        ]
+    },
+    {
+        "id": "clicked_link",
+        "keywords": ["ضغطت على رابط", "دخلت رابط مشبوه", "فتحت رابط احتيالي", "ضغطت رابط تصيد", "دخلت على رابط غريب"],
+        "title": "⚠️ حالة طوارئ: الضغط على رابط تصيّد",
+        "steps": [
+            "لا تُدخل أي بيانات إضافية على الصفحة إن كانت لا تزال مفتوحة، وأغلقها فوراً.",
+            "إذا أدخلت كلمة مرور أو بيانات بطاقة، غيّرها فوراً من مصدر رسمي موثوق.",
+            "افحص جهازك ببرنامج مكافحة فيروسات محدث للتأكد من عدم وجود برمجيات خبيثة.",
+            "راقب حساباتك المالية عن كثب خلال الأيام القادمة.",
+            "استخدم أداة فحص الروابط في هذه المنصة للتحقق من أي رابط مشابه مستقبلاً."
+        ]
+    },
+    {
+        "id": "lost_phone",
+        "keywords": ["فقدت هاتفي", "سرق هاتفي", "ضاع جوالي", "سرقوا جوالي", "ضاع تلفوني"],
+        "title": "🚨 حالة طوارئ: فقدان أو سرقة الهاتف",
+        "steps": [
+            "استخدم خدمة تحديد الموقع عن بُعد (Find My Device / Find My iPhone) لتحديد الجهاز أو مسحه.",
+            "غيّر كلمات مرور الحسابات المرتبطة بالهاتف فوراً (بريد، بنك، تواصل اجتماعي).",
+            "أبلغ مزوّد خدمة الاتصالات لتعطيل خط الشريحة (SIM) لمنع استغلاله.",
+            "فعّل قفل الجهاز عن بعد إن كانت الخدمة تدعم ذلك.",
+            "أبلغ الجهات الأمنية الرسمية في حال السرقة."
+        ]
+    },
+]
+
+
+def check_emergency(message: str):
+    for scenario in EMERGENCY_SCENARIOS:
+        for kw in scenario["keywords"]:
+            if kw in message:
+                return scenario
+    return None
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    try: 
+    try:
         return templates.TemplateResponse(request=request, name="index.html")
-    except Exception as e: 
+    except Exception as e:
         return HTMLResponse(content=f"<h3>خطأ في العثور على index.html داخل مجلد templates</h3>", status_code=500)
 
+
 @app.get("/api/stats")
-def get_stats(): 
+def get_stats():
     return stats
 
+
 @app.post("/api/scan-url")
-def api_scan_url(data: dict): 
+def api_scan_url(data: dict):
     return analyze_url(data["url"])
 
+
 @app.post("/api/scan-text")
-def api_scan_text(data: dict): 
+def api_scan_text(data: dict):
     return analyze_text(data["text"])
+
 
 @app.post("/api/scan-image")
 async def api_scan_image(file: UploadFile = File(...)):
-    if not file.content_type.startswith("image/"): 
+    if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="الملف يجب أن يكون صورة")
     file_bytes = await file.read()
     return analyze_image(file_bytes)
 
+
 @app.post("/api/chat")
 def api_chat(data: dict):
-    message = data.get("message", "").lower()
-    if "رابط" in message: 
-        reply = "عند فحص الروابط نتحقق من شهادات SSL والكلمات المخادعة."
-    elif "رسالة" in message: 
-        reply = "رسائل الاحتيال تعتمد على الهندسة الاجتماعية لإثارة الذعر أو الطمع."
-    elif "صورة" in message: 
-        reply = "نفحص ميتاداتا الصور لكشف أي تعديل برمجيات."
-    else: 
-        reply = "مرحباً بك في نظام عين الأمان."
-    return {"reply": reply}
+    message = data.get("message", "").strip()
+    message_lower = message.lower()
+
+    # --- الأولوية القصوى: سيناريوهات الطوارئ ---
+    emergency = check_emergency(message)
+    if emergency:
+        reply_text = emergency["title"] + "\n" + "\n".join([f"{i+1}. {s}" for i, s in enumerate(emergency["steps"])])
+        return {
+            "reply": reply_text,
+            "type": "emergency",
+            "title": emergency["title"],
+            "steps": emergency["steps"]
+        }
+
+    if any(w in message for w in ["مرحبا", "اهلا", "أهلا", "السلام عليكم"]):
+        reply = "مرحباً بك في نظام عين الأمان 🛡️. يمكنني مساعدتك في فحص الروابط والرسائل والصور، أو تقديم إرشادات فورية إن كنت تمر بحالة طارئة."
+    elif "رابط" in message or "url" in message_lower:
+        reply = "عند فحص الروابط نقوم بفك تشفير الروابط المختصرة، ومطابقتها مع قائمة سوداء محلية للنطاقات الاحتيالية، والتحقق من شهادات SSL والكلمات المخادعة."
+    elif "رسالة" in message or "نص" in message:
+        reply = "رسائل الاحتيال تعتمد على الهندسة الاجتماعية لإثارة الذعر أو الطمع، ونقوم بتحليلها لغوياً لرصد الأنماط المعروفة."
+    elif "صورة" in message:
+        reply = "نفحص ميتاداتا الصور (EXIF) لكشف أي تعديل ببرمجيات خارجية أو إزالة متعمدة لبيانات المصدر."
+    elif "مساعدة" in message or "help" in message_lower:
+        reply = "يمكنني مساعدتك في: فحص الروابط، تحليل الرسائل الاحتيالية، وفحص ميتاداتا الصور. وإن كنت تمر بحالة طارئة، اكتب مثلاً 'تم اختراقي' وسأزودك بخطوات فورية."
+    else:
+        reply = "مرحباً بك في نظام عين الأمان. اسألني عن الروابط أو الرسائل أو الصور، أو أخبرني إن كنت تمر بحالة أمنية طارئة."
+
+    return {"reply": reply, "type": "normal"}
+
+
+# مسار استقبال وتحليل رمز التوثيق المرسل من جوجل (ID Token)
+@app.post("/api/auth/google")
+def google_auth(data: dict):
+    token = data.get("credential")
+    if not token:
+        raise HTTPException(status_code=400, detail="مفتاح تسجيل الدخول مفقود")
+    try:
+        # التحقق من صحة التوكن مباشرة مع خوادم جوجل لمنع التلاعب
+        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
+
+        # جلب بيانات المستخدم الموثقة والآمنة
+        user_email = idinfo.get('email')
+        user_name = idinfo.get('name')
+        user_picture = idinfo.get('picture')
+
+        return {
+            "success": True,
+            "user": {
+                "name": user_name,
+                "email": user_email,
+                "picture": user_picture,
+                "authType": "google"
+            }
+        }
+    except ValueError:
+        raise HTTPException(status_code=400, detail="رمز التحقق من جوجل غير صالح أو منتهي الصلاحية")
+
+
+# مسار إرسال كود التحقق OTP إلى واتساب المستخدم
+@app.post("/api/auth/whatsapp/send")
+def send_whatsapp_otp(data: dict):
+    phone = data.get("phone")
+    if not phone:
+        raise HTTPException(status_code=400, detail="الرجاء إدخال رقم الهاتف")
+
+    otp_code = str(random.randint(100000, 999999))
+    temp_whatsapp_codes[phone] = otp_code
+
+    message_text = f"🛡️ [Smart Verify]\n\nكود التحقق الخاص بك هو: *{otp_code}*\n\nيرجى إدخاله لتأكيد تسجيل الدخول."
+
+    url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
+    payload = {
+        "token": ULTRAMSG_TOKEN,
+        "to": phone,
+        "body": message_text,
+        "priority": "10"
+    }
+    headers = {'content-type': 'application/x-www-form-urlencoded'}
+
+    try:
+        response = requests.post(url, data=payload, headers=headers)
+        res_json = response.json()
+        if res_json.get("sent") == "true" or "success" in res_json:
+            return {"success": True, "message": "تم إرسال كود التحقق بنجاح!"}
+        else:
+            return {"success": True, "fallback": True, "code": otp_code, "message": "تم توليد الكود محلياً لعرضه بالمناقشة."}
+    except Exception:
+        return {"success": True, "fallback": True, "code": otp_code, "message": "تم تشغيل وضع المحاكاة المحلي بنجاح للمشروع."}
+
+
+# مسار التحقق من الكود المدخل لواتساب
+@app.post("/api/auth/whatsapp/verify")
+def verify_whatsapp_otp(data: dict):
+    phone = data.get("phone")
+    code = data.get("code")
+
+    if phone in temp_whatsapp_codes and temp_whatsapp_codes[phone] == code:
+        del temp_whatsapp_codes[phone]
+        return {"success": True, "message": "تم تسجيل الدخول عبر واتساب بنجاح!"}
+
+    raise HTTPException(status_code=400, detail="كود التحقق غير صحيح")

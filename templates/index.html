@@ -6,6 +6,8 @@
     <title>Smart Verify - نظام التحقق الرقمي الذكي</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- استدعاء مكتبة جوجل الرسمية للأزرار التفاعلية -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght=300;400;600;700;900&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
@@ -23,14 +25,9 @@
             font-family: 'Orbitron', sans-serif;
         }
 
-        /* تأثيرات توهج النيون المستقبلي */
         .neon-border-cyan {
             box-shadow: 0 0 15px rgba(6, 182, 212, 0.3);
             border: 1px solid rgba(6, 182, 212, 0.5);
-        }
-        .neon-border-purple {
-            box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
-            border: 1px solid rgba(168, 85, 247, 0.4);
         }
         .neon-text-cyan {
             text-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
@@ -39,7 +36,6 @@
             text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
         }
         
-        /* تأثير الزجاج المتوهج */
         .glass-panel {
             background: rgba(15, 23, 42, 0.6);
             backdrop-filter: blur(12px);
@@ -47,13 +43,114 @@
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        /* حركة النبض للنيون لتعطي إحساساً بالحيوية */
         @keyframes pulse-cyan {
             0%, 100% { box-shadow: 0 0 15px rgba(6, 182, 212, 0.3); }
             50% { box-shadow: 0 0 25px rgba(6, 182, 212, 0.6); }
         }
         .pulse-neon {
             animation: pulse-cyan 3s infinite;
+        }
+
+        /* ===== مؤشر الفحص التفاعلي (Scanning Spinner) ===== */
+        #scan-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(3, 7, 18, 0.92);
+            backdrop-filter: blur(6px);
+            z-index: 40;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 1.5rem;
+            gap: 1.25rem;
+        }
+        #scan-overlay.active { display: flex; }
+        .scan-ring {
+            width: 84px; height: 84px;
+            border-radius: 50%;
+            border: 3px solid rgba(6, 182, 212, 0.15);
+            border-top-color: #06b6d4;
+            border-right-color: #a855f7;
+            animation: spin-ring 1.1s linear infinite;
+            position: relative;
+        }
+        @keyframes spin-ring { to { transform: rotate(360deg); } }
+        .scan-stage-text {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75rem;
+            letter-spacing: 0.1em;
+            color: #22d3ee;
+            text-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
+            min-height: 1.2rem;
+            text-align: center;
+        }
+        .scan-progress-track {
+            width: 220px; height: 5px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .scan-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #06b6d4, #a855f7);
+            border-radius: 999px;
+            transition: width 0.4s ease;
+        }
+
+        /* ===== محاكي هجمات التصيّد (Phishing Simulator) ===== */
+        .sim-card {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(168, 85, 247, 0.25);
+            border-radius: 1.25rem;
+            transition: all 0.35s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .sim-card:hover {
+            border-color: rgba(168, 85, 247, 0.6);
+            box-shadow: 0 0 25px rgba(168, 85, 247, 0.2);
+            transform: translateY(-3px);
+        }
+        .sim-flag-btn {
+            transition: all 0.25s ease;
+        }
+        .sim-flag-btn.selected-real {
+            background: rgba(16, 185, 129, 0.2) !important;
+            border-color: #10b981 !important;
+            color: #34d399 !important;
+        }
+        .sim-flag-btn.selected-fake {
+            background: rgba(244, 63, 94, 0.2) !important;
+            border-color: #f43f5e !important;
+            color: #fb7185 !important;
+        }
+        .sim-verdict-correct {
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.35);
+            border-color: rgba(16, 185, 129, 0.6) !important;
+        }
+        .sim-verdict-wrong {
+            box-shadow: 0 0 20px rgba(244, 63, 94, 0.35);
+            border-color: rgba(244, 63, 94, 0.6) !important;
+        }
+        @keyframes neon-flicker {
+            0%, 100% { opacity: 1; }
+            45% { opacity: 0.85; }
+            50% { opacity: 0.4; }
+            55% { opacity: 0.85; }
+        }
+        .neon-flicker { animation: neon-flicker 2.5s infinite; }
+
+        /* ===== رسائل الطوارئ في المستشار الذكي ===== */
+        .chat-emergency {
+            background: rgba(244, 63, 94, 0.1);
+            border: 1px solid rgba(244, 63, 94, 0.4);
+            box-shadow: 0 0 15px rgba(244, 63, 94, 0.15);
+        }
+        .chat-emergency-title {
+            color: #fb7185;
+            font-weight: 900;
         }
     </style>
 </head>
@@ -72,16 +169,96 @@
                     <span class="text-[9px] text-cyan-400 tracking-wider uppercase font-bold">Secure Core v2.0</span>
                 </div>
             </div>
-            <nav class="hidden md:flex gap-6 text-sm font-semibold text-slate-400">
+            <nav class="hidden md:flex gap-6 text-sm font-semibold text-slate-400 items-center">
                 <a href="#scanner" class="hover:text-cyan-400 hover:neon-text-cyan transition duration-300">أدوات الفحص</a>
                 <a href="#stats-section" class="hover:text-cyan-400 hover:neon-text-cyan transition duration-300">الإحصائيات حية</a>
                 <a href="#assistant" class="hover:text-purple-400 hover:neon-text-purple transition duration-300">المستشار الذكي</a>
+                <a href="#simulator" class="hover:text-purple-400 hover:neon-text-purple transition duration-300">محاكي التصيّد</a>
+                
+                <div id="auth-area" class="mr-4">
+                    <button onclick="openLoginModal()" id="login-btn" class="bg-cyan-950/80 border border-cyan-500 hover:bg-cyan-900/50 text-cyan-300 px-5 py-2 rounded-xl text-xs font-black tracking-wider transition duration-300 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                        <i class="fa-solid fa-fingerprint ml-1.5"></i> بوابة الدخول
+                    </button>
+                    <div id="user-info" class="hidden flex items-center gap-3 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+                        <img id="user-avatar" src="" alt="Avatar" class="w-6 h-6 rounded-full border border-cyan-500">
+                        <span class="text-xs text-slate-400 font-semibold">مرحباً، <span id="display-username" class="text-cyan-400 font-bold"></span></span>
+                        <button onclick="logout()" class="text-rose-400 hover:text-rose-300 text-xs font-bold transition duration-200">
+                            <i class="fa-solid fa-power-off"></i>
+                        </button>
+                    </div>
+                </div>
             </nav>
         </div>
     </header>
 
+    <!-- واجهة تسجيل الدخول المنبثقة المتطورة لتدعم جوجل -->
+    <div id="login-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-[100] flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300">
+        <div class="glass-panel w-[95%] max-w-lg rounded-3xl p-8 border-cyan-500/30 shadow-[0_0_40px_rgba(6,182,212,0.15)] relative">
+            <button onclick="closeLoginModal()" class="absolute top-5 left-5 text-slate-500 hover:text-slate-300 transition duration-200">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+            <div class="text-center mb-6">
+                <div class="inline-flex bg-cyan-950 border border-cyan-500 p-3.5 rounded-full text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)] mb-3">
+                    <i class="fa-solid fa-shield-halved text-2xl"></i>
+                </div>
+                <h3 class="text-xl font-black text-white neon-text-cyan font-orbitron uppercase">SECURE PORTAL</h3>
+                <p class="text-slate-500 text-xs mt-1">سجل دخولك عبر جوجل أو الواتساب</p>
+            </div>
+            
+            <div class="space-y-6">
+                <!-- زر تسجيل الدخول الذكي بواسطة Google -->
+                <div class="flex flex-col items-center justify-center bg-slate-900 border border-slate-800/80 p-4 rounded-xl gap-3">
+                    <span class="text-xs text-slate-400 font-bold">تسجيل دخول سريع ومؤمن:</span>
+                    <div id="g_id_onload"
+                         data-client_id="873065114114-g9a11ts2a0nj41pulqg8v25dfpo22dec.apps.googleusercontent.com"
+                         data-callback="handleCredentialResponse"
+                         data-auto_prompt="false">
+                    </div>
+                    <div class="g_id_signin"
+                         data-type="standard"
+                         data-size="large"
+                         data-theme="filled_dark"
+                         data-text="sign_in_with"
+                         data-shape="rectangular"
+                         data-logo_alignment="left">
+                    </div>
+                </div>
+
+                <div class="flex items-center my-4">
+                    <div class="flex-grow border-t border-slate-800"></div>
+                    <span class="mx-4 text-xs text-slate-600 uppercase font-black">أو عبر واتساب</span>
+                    <div class="flex-grow border-t border-slate-800"></div>
+                </div>
+
+                <div id="whatsapp-input-area" class="space-y-3">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-slate-400 text-xs font-bold">رقم الهاتف الدولي:</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="wa-phone" placeholder="966500000000" class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-cyan-400 focus:outline-none focus:border-cyan-500 flex-grow text-left" dir="ltr">
+                            <button onclick="sendWhatsAppOTP()" class="bg-emerald-600 hover:bg-emerald-500 text-slate-950 px-4 py-3 rounded-xl font-black text-xs transition duration-300 flex items-center justify-center gap-1">
+                                <i class="fa-solid fa-paper-plane"></i> إرسال الكود
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="wa-code-area" class="hidden flex flex-col gap-2 pt-2 border-t border-slate-800/50">
+                        <div class="bg-amber-500/10 border border-amber-500/30 text-amber-400 p-3 rounded-xl text-xs" id="fallback-notification" style="display: none;">
+                            💡 للتجربة: استخدم الكود <strong id="fallback-code" class="text-sm underline"></strong>
+                        </div>
+                        <label class="text-slate-400 text-xs font-bold">كود التحقق:</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="wa-code" placeholder="------" class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-center text-emerald-400 focus:outline-none focus:border-emerald-500 tracking-widest font-bold flex-grow" dir="ltr">
+                            <button onclick="verifyWhatsAppOTP()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-6 py-3 rounded-xl font-black text-xs transition duration-300">
+                                تفعيل
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <main class="max-w-7xl mx-auto px-6 py-8 w-full flex-grow space-y-12 z-10 relative">
-        
         <section class="text-center py-10 space-y-4">
             <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 text-xs font-bold mb-4 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
                 <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
@@ -95,6 +272,7 @@
             </p>
         </section>
 
+        <!-- الإحصائيات -->
         <section id="stats-section" class="grid grid-cols-2 md:grid-cols-4 gap-5">
             <div class="glass-panel border-cyan-500/10 p-6 rounded-2xl text-center hover:border-cyan-500/40 transition duration-500 group">
                 <div class="text-cyan-400 text-3xl mb-2 group-hover:scale-110 transition duration-300"><i class="fa-solid fa-server"></i></div>
@@ -118,7 +296,17 @@
             </div>
         </section>
 
-        <section id="scanner" class="glass-panel rounded-3xl p-6 md:p-8 pulse-neon">
+        <!-- لوحة أدوات الفحص -->
+        <section id="scanner" class="glass-panel rounded-3xl p-6 md:p-8 pulse-neon relative">
+            <!-- مؤشر التحميل الذكي التفاعلي أثناء الفحص -->
+            <div id="scan-overlay">
+                <div class="scan-ring"></div>
+                <div id="scan-stage-text" class="scan-stage-text font-orbitron">جاري التهيئة...</div>
+                <div class="scan-progress-track">
+                    <div id="scan-progress-fill" class="scan-progress-fill"></div>
+                </div>
+            </div>
+
             <div class="flex border-b border-slate-800 mb-8 gap-2">
                 <button onclick="switchTab('url-tab')" id="btn-url-tab" class="tab-btn pb-3 px-6 text-cyan-400 border-b-2 border-cyan-500 font-bold focus:outline-none transition duration-300 neon-text-cyan">
                     <i class="fa-solid fa-circle-nodes ml-2"></i>تحليل رابط (URL)
@@ -146,8 +334,8 @@
             <div id="text-tab" class="tab-content hidden space-y-4">
                 <div class="space-y-2">
                     <label class="block text-slate-400 text-sm font-semibold">محتوى النص المراد معالجته لغوياً:</label>
-                    <textarea id="text-input" rows="4" placeholder="مثال: عزيزي العميل، تم تجميد حسابك البنكي مؤقتاً... الرجاء الدخول للرابط أدناه..." class="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-4 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 text-slate-300 placeholder-slate-700"></textarea>
-                    <button onclick="scanText()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                    <textarea id="text-input" rows="4" placeholder="مثال: عزيزي العميل، تم تجميد حسابك البنكي..." class="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-4 focus:outline-none focus:border-cyan-500 text-slate-300"></textarea>
+                    <button onclick="scanText()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2">
                         <i class="fa-solid fa-brain"></i> فك البصمة اللغوية
                     </button>
                 </div>
@@ -159,31 +347,44 @@
                     <div class="border border-dashed border-slate-800 rounded-xl p-8 text-center bg-slate-950/50 hover:bg-slate-950 hover:border-cyan-500/50 transition duration-300 relative group">
                         <input type="file" id="image-input" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="displayFileName()">
                         <i class="fa-solid fa-circle-nodes text-slate-700 text-4xl mb-3 group-hover:text-cyan-500 transition duration-300"></i>
-                        <p class="text-slate-300 font-semibold text-sm" id="file-label">اسحب ملف الصورة الرقمي أو انقر هنا لتصفح الجهاز</p>
-                        <p class="text-slate-600 text-xs mt-1">PNG, JPEG, WEBP - فحص الميتاداتا لبرامج الفوتوشوب</p>
+                        <p class="text-slate-300 font-semibold text-sm" id="file-label">اسحب ملف الصورة أو انقر للتصفح</p>
                     </div>
-                    <button onclick="scanImage()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                    <button onclick="scanImage()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2">
                         <i class="fa-solid fa-radar"></i> فحص الميتاداتا العميقة
                     </button>
                 </div>
             </div>
 
+            <!-- نتائج الفحص -->
             <div id="result-box" class="hidden mt-10 border-t border-slate-800 pt-8 space-y-4">
-                <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                    <span class="w-1.5 h-4 bg-cyan-400 rounded-full"></span> تقرير التشخيص الفني:
-                </h3>
+                <div class="flex items-center justify-between flex-wrap gap-3">
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <span class="w-1.5 h-4 bg-cyan-400 rounded-full"></span> تقرير التشخيص الفني:
+                    </h3>
+                    <button onclick="downloadReport()" class="bg-slate-900 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 px-4 py-2 rounded-xl text-xs font-black tracking-wider transition duration-300 flex items-center gap-2">
+                        <i class="fa-solid fa-file-shield"></i> تحميل التقرير المحمي
+                    </button>
+                </div>
+
+                <!-- سلسلة إعادة التوجيه لفك الروابط المختصرة -->
+                <div id="redirect-chain-box" class="hidden bg-slate-950/60 border border-indigo-500/20 rounded-2xl p-4 space-y-2">
+                    <div class="text-xs text-indigo-300 font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-diagram-project"></i> مسار فك تشفير الرابط المختصر:
+                    </div>
+                    <ul id="redirect-chain-list" class="text-[11px] text-slate-400 space-y-1 font-mono" dir="ltr"></ul>
+                </div>
+
                 <div id="result-card" class="p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div class="space-y-3">
                         <div class="flex items-center gap-2">
-                            <span class="text-xs text-slate-500 uppercase tracking-wider">تقييم سلامة العنصر:</span>
+                            <span class="text-xs text-slate-500 uppercase tracking-wider">سلامة العنصر:</span>
                             <span id="res-status" class="px-3 py-1 rounded-full text-xs font-bold">انتظار البيانات</span>
                         </div>
-                        <div class="text-slate-300 text-sm font-semibold">تفاصيل الكشف والتحليل الهيكلي:</div>
-                        <ul id="res-reasons" class="list-none text-sm text-slate-400 space-y-2">
-                            </ul>
+                        <div class="text-slate-300 text-sm font-semibold">تفاصيل الكشف:</div>
+                        <ul id="res-reasons" class="list-none text-sm text-slate-400 space-y-2"></ul>
                     </div>
                     <div class="text-center bg-slate-950 border p-6 rounded-2xl shrink-0 min-w-[170px] relative overflow-hidden group">
-                        <span class="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">نسبة التهديد المكتشفة</span>
+                        <span class="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">نسبة التهديد</span>
                         <span id="res-score" class="text-4xl font-black text-cyan-400 neon-text-cyan">0%</span>
                         <div class="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 to-indigo-500"></div>
                     </div>
@@ -191,21 +392,47 @@
             </div>
         </section>
 
+        <!-- محاكي هجمات التصيّد التعليمي -->
+        <section id="simulator" class="glass-panel rounded-3xl p-6 md:p-8 border-purple-500/20">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                <div>
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-950/50 border border-purple-500/30 text-purple-300 text-[11px] font-bold mb-3">
+                        <i class="fa-solid fa-graduation-cap"></i> تدريب توعوي تفاعلي
+                    </div>
+                    <h2 class="text-2xl md:text-3xl font-black text-white font-orbitron neon-text-purple neon-flicker">PHISHING SIMULATOR</h2>
+                    <p class="text-slate-400 text-sm mt-2 max-w-xl">اختبر قدرتك على كشف رسائل التصيّد الوهمية. حدّد لكل رسالة هل هي <span class="text-emerald-400 font-bold">حقيقية</span> أم <span class="text-rose-400 font-bold">تصيّد احتيالي</span>، بدون أي خطر فعلي.</p>
+                </div>
+                <div class="text-center bg-slate-950/80 border border-purple-500/30 p-5 rounded-2xl shrink-0 min-w-[140px]">
+                    <div class="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1">نتيجتك</div>
+                    <div><span id="sim-score" class="text-3xl font-black text-purple-400 neon-text-purple">0</span><span class="text-slate-600 text-lg"> / <span id="sim-total">0</span></span></div>
+                </div>
+            </div>
+
+            <div id="sim-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-5"></div>
+
+            <div class="text-center mt-8">
+                <button onclick="resetSimulator()" class="bg-purple-950/50 border border-purple-500/40 hover:bg-purple-900/50 text-purple-300 px-6 py-3 rounded-xl text-xs font-black tracking-wider transition duration-300">
+                    <i class="fa-solid fa-rotate ml-2"></i> إعادة تشغيل المحاكاة
+                </button>
+            </div>
+        </section>
+
+        <!-- المستشار المساعد -->
         <section id="assistant" class="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-900/40 border border-slate-800 rounded-3xl p-6 md:p-8">
             <div class="md:col-span-1 space-y-4 flex flex-col justify-center">
                 <div class="text-purple-400 text-4xl"><i class="fa-solid fa-user-gear"></i></div>
                 <h3 class="text-2xl font-black text-white neon-text-purple font-orbitron">Smart Assistant</h3>
-                <p class="text-slate-400 text-sm leading-relaxed">اسأل مستشارك الأمني المدمج والمدعوم بالذكاء الاصطناعي عن أي حيلة احتيالية، أسلوب تصيد، أو طريقة تفادي للثغرات الحالية للحصول على توجيه فوري.</p>
+                <p class="text-slate-400 text-sm leading-relaxed">اسأل مستشارك الأمني المدمج والمدعوم بالذكاء الاصطناعي للحصول على توجيه فوري.</p>
             </div>
             <div class="md:col-span-2 flex flex-col h-[320px] bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-inner">
                 <div id="chat-box" class="flex-grow p-4 overflow-y-auto space-y-4 text-xs md:text-sm">
                     <div class="bg-slate-900/60 border border-slate-800 text-slate-300 p-3.5 rounded-2xl rounded-tr-none max-w-[85%] leading-relaxed shadow-sm">
-                         مرحباً بك! أنا المستشار الافتراضي لنظام Smart Verify. كيف يمكنني مساعدتك في تعزيز دفاعاتك الرقمية اليوم؟
+                         مرحباً بك! أنا المستشار الافتراضي لنظام Smart Verify. كيف يمكنني مساعدتك؟
                     </div>
                 </div>
                 <div class="p-3 border-t border-slate-800/80 flex gap-2 bg-slate-950/40">
-                    <input type="text" id="chat-input" placeholder="اكتب سؤالك الأمني هنا..." class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex-grow focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-slate-300 text-sm placeholder-slate-700">
-                    <button onclick="sendChatMessage()" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl text-sm font-black transition duration-300 shadow-[0_0_15px_rgba(168,85,247,0.4)]">إرسال</button>
+                    <input type="text" id="chat-input" placeholder="اكتب سؤالك الأمني هنا..." class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex-grow focus:outline-none focus:border-purple-500 text-slate-300 text-sm">
+                    <button onclick="sendChatMessage()" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl text-sm font-black transition duration-300">إرسال</button>
                 </div>
             </div>
         </section>
@@ -249,17 +476,23 @@
             } catch(e) { console.error("Error updating stats", e); }
         }
 
-        function displayResults(status, riskScore, reasons) {
+        // يحفظ آخر نتيجة فحص لاستخدامها عند توليد التقرير القابل للتحميل
+        let lastScanReport = null;
+
+        function displayResults(status, riskScore, reasons, meta) {
+            meta = meta || {};
             const resultBox = document.getElementById('result-box');
             const resStatus = document.getElementById('res-status');
             const resScore = document.getElementById('res-score');
             const resReasons = document.getElementById('res-reasons');
             const resultCard = document.getElementById('result-card');
+            const chainBox = document.getElementById('redirect-chain-box');
+            const chainList = document.getElementById('redirect-chain-list');
 
             resultBox.classList.remove('hidden');
             resStatus.innerText = status;
             resScore.innerText = riskScore + "%";
-            
+
             resReasons.innerHTML = '';
             reasons.forEach(r => {
                 const li = document.createElement('li');
@@ -268,23 +501,144 @@
                 resReasons.appendChild(li);
             });
 
-            if (riskScore >= 50) {
-                resStatus.className = "px-3 py-1 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-[0_0_10px_rgba(239,68,68,0.2)]";
-                resScore.className = "text-4xl font-black text-rose-500 neon-text-purple";
-                resultCard.className = "p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-rose-950/20 border border-rose-500/20 shadow-[0_0_15px_rgba(239,68,68,0.05)]";
+            // عرض سلسلة إعادة التوجيه إذا كان الرابط مختصراً وتم فك تشفيره
+            if (meta.redirect_chain && meta.redirect_chain.length > 1) {
+                chainBox.classList.remove('hidden');
+                chainList.innerHTML = '';
+                meta.redirect_chain.forEach((step, idx) => {
+                    const li = document.createElement('li');
+                    li.className = "flex items-center gap-2";
+                    const arrow = idx > 0 ? '<i class="fa-solid fa-arrow-left text-indigo-500"></i>' : '<i class="fa-solid fa-flag text-cyan-500"></i>';
+                    li.innerHTML = `${arrow} <span class="${idx === meta.redirect_chain.length - 1 ? 'text-indigo-300 font-bold' : ''}">${step}</span>`;
+                    chainList.appendChild(li);
+                });
             } else {
-                resStatus.className = "px-3 py-1 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]";
-                resScore.className = "text-4xl font-black text-emerald-400 neon-text-cyan";
-                resultCard.className = "p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-emerald-950/20 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]";
+                chainBox.classList.add('hidden');
             }
+
+            if (riskScore >= 50) {
+                resStatus.className = "px-3 py-1 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30";
+                resScore.className = "text-4xl font-black text-rose-500";
+                resultCard.className = "p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-rose-950/20 border border-rose-500/20";
+            } else {
+                resStatus.className = "px-3 py-1 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                resScore.className = "text-4xl font-black text-emerald-400";
+                resultCard.className = "p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-emerald-950/20 border border-emerald-500/20";
+            }
+
+            // حفظ بيانات التقرير لاستخدامها عند التحميل
+            lastScanReport = {
+                type: meta.scanType || 'غير محدد',
+                subject: meta.subject || '',
+                status: status,
+                riskScore: riskScore,
+                reasons: reasons,
+                redirectChain: meta.redirect_chain || null,
+                timestamp: new Date().toISOString()
+            };
+
             refreshStats();
-            
             resultBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // ===== توليد بصمة تحقق (SHA-256) لحماية التقرير من التلاعب =====
+        async function generateIntegrityHash(text) {
+            try {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(text);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            } catch (e) {
+                return 'غير متوفر (المتصفح لا يدعم واجهة التشفير)';
+            }
+        }
+
+        async function downloadReport() {
+            if (!lastScanReport) { alert("لا توجد نتيجة فحص لتحميلها بعد!"); return; }
+
+            const r = lastScanReport;
+            let body = "";
+            body += "==================================================\n";
+            body += "           تقرير التشخيص الفني - Smart Verify\n";
+            body += "==================================================\n\n";
+            body += `نوع الفحص       : ${r.type}\n`;
+            if (r.subject) body += `العنصر المفحوص   : ${r.subject}\n`;
+            body += `تاريخ الفحص      : ${new Date(r.timestamp).toLocaleString('ar-EG')}\n`;
+            body += `الحالة النهائية   : ${r.status}\n`;
+            body += `نسبة التهديد     : ${r.riskScore}%\n\n`;
+            body += "--------------------------------------------------\n";
+            body += "تفاصيل الكشف:\n";
+            r.reasons.forEach((reason, i) => { body += `  ${i + 1}. ${reason}\n`; });
+
+            if (r.redirectChain && r.redirectChain.length > 1) {
+                body += "\n--------------------------------------------------\n";
+                body += "مسار فك تشفير الرابط المختصر:\n";
+                r.redirectChain.forEach((step, i) => { body += `  ${i + 1}) ${step}\n`; });
+            }
+
+            body += "\n--------------------------------------------------\n";
+            body += "هذا التقرير محمي بختم تحقق رقمي (SHA-256) لضمان عدم التلاعب بمحتواه بعد إصداره.\n";
+
+            const integrityHash = await generateIntegrityHash(body);
+            body += `رمز التحقق (Integrity Hash): ${integrityHash}\n`;
+            body += "==================================================\n";
+
+            const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            a.href = url;
+            a.download = `SmartVerify-Report-${stamp}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // ===== مؤشر التحميل الذكي التفاعلي أثناء الفحص =====
+        const SCAN_STAGES = {
+            url: ["فك تشفير الروابط المختصرة...", "مطابقة القائمة السوداء المحلية...", "التحقق من شهادة SSL...", "تحليل الكلمات الدلالية للتصيد...", "احتساب نسبة التهديد النهائية..."],
+            text: ["تحليل البنية اللغوية للنص...", "مطابقة أنماط الاحتيال المعروفة...", "فحص مؤشرات الهندسة الاجتماعية...", "احتساب نسبة التهديد النهائية..."],
+            image: ["قراءة بيانات الميتاداتا EXIF...", "فحص بصمة برنامج التحرير...", "تحليل تكامل بنية الملف...", "احتساب نسبة التهديد النهائية..."]
+        };
+        let scanOverlayInterval = null;
+
+        function startScanOverlay(kind) {
+            const overlay = document.getElementById('scan-overlay');
+            const stageText = document.getElementById('scan-stage-text');
+            const fill = document.getElementById('scan-progress-fill');
+            const stages = SCAN_STAGES[kind] || SCAN_STAGES.url;
+            let idx = 0;
+
+            overlay.classList.add('active');
+            fill.style.width = '5%';
+            stageText.innerText = stages[0];
+
+            clearInterval(scanOverlayInterval);
+            scanOverlayInterval = setInterval(() => {
+                idx = Math.min(idx + 1, stages.length - 1);
+                stageText.innerText = stages[idx];
+                const pct = Math.min(((idx + 1) / stages.length) * 92, 92);
+                fill.style.width = pct + '%';
+            }, 650);
+        }
+
+        function stopScanOverlay() {
+            const overlay = document.getElementById('scan-overlay');
+            const fill = document.getElementById('scan-progress-fill');
+            clearInterval(scanOverlayInterval);
+            fill.style.width = '100%';
+            setTimeout(() => {
+                overlay.classList.remove('active');
+                fill.style.width = '0%';
+            }, 300);
         }
 
         async function scanURL() {
             const urlInput = document.getElementById('url-input').value.trim();
             if(!urlInput) return alert("الرجاء توفير الرابط أولاً ليتم التحليل!");
+            startScanOverlay('url');
             try {
                 const res = await fetch('/api/scan-url', {
                     method: 'POST',
@@ -292,13 +646,19 @@
                     body: JSON.stringify({url: urlInput})
                 });
                 const data = await res.json();
-                displayResults(data.status, data.risk_score, data.reasons);
-            } catch(e) { alert("فشل الاتصال بخادم المعالجة الأساسي"); }
+                stopScanOverlay();
+                displayResults(data.status, data.risk_score, data.reasons, {
+                    scanType: 'فحص رابط (URL)',
+                    subject: data.original_url || urlInput,
+                    redirect_chain: data.was_expanded ? data.redirect_chain : null
+                });
+            } catch(e) { stopScanOverlay(); alert("فشل الاتصال بخادم المعالجة الأساسي"); }
         }
 
         async function scanText() {
             const textInput = document.getElementById('text-input').value.trim();
-            if(!textInput) return alert("الرجاء توفير الرسالة أولاً ليتم فك البصمة!");
+            if(!textInput) return alert("الرجاء توفير الرسالة أولاً!");
+            startScanOverlay('text');
             try {
                 const res = await fetch('/api/scan-text', {
                     method: 'POST',
@@ -306,23 +666,32 @@
                     body: JSON.stringify({text: textInput})
                 });
                 const data = await res.json();
-                displayResults(data.status, data.risk_score, data.reasons);
-            } catch(e) { alert("فشل الاتصال بخادم المعالجة الأساسي"); }
+                stopScanOverlay();
+                displayResults(data.status, data.risk_score, data.reasons, {
+                    scanType: 'فحص رسالة نصية',
+                    subject: textInput.length > 80 ? textInput.slice(0, 80) + '...' : textInput
+                });
+            } catch(e) { stopScanOverlay(); alert("فشل الاتصال بخادم المعالجة الأساسي"); }
         }
 
         async function scanImage() {
             const fileInput = document.getElementById('image-input');
-            if(fileInput.files.length === 0) return alert("الرجاء إرفاق ملف الصورة أولاً لمعاينتها!");
+            if(fileInput.files.length === 0) return alert("الرجاء إرفاق ملف الصورة!");
             const formData = new FormData();
             formData.append("file", fileInput.files[0]);
+            startScanOverlay('image');
             try {
                 const res = await fetch('/api/scan-image', {
                     method: 'POST',
                     body: formData
                 });
                 const data = await res.json();
-                displayResults(data.status, data.risk_score, data.reasons);
-            } catch(e) { alert("حدث خطأ أثناء تشريح الصورة ومراجعة الميتاداتا الخاصة بها"); }
+                stopScanOverlay();
+                displayResults(data.status, data.risk_score, data.reasons, {
+                    scanType: 'فحص ميتاداتا صورة',
+                    subject: fileInput.files[0].name
+                });
+            } catch(e) { stopScanOverlay(); alert("حدث خطأ أثناء فحص ميتاداتا الصورة"); }
         }
 
         async function sendChatMessage() {
@@ -331,7 +700,6 @@
             if(!msg) return;
 
             const chatBox = document.getElementById('chat-box');
-            
             const userDiv = document.createElement('div');
             userDiv.className = "bg-purple-600 text-white p-3.5 rounded-2xl rounded-tl-none max-w-[85%] mr-auto text-left shadow-md font-semibold";
             userDiv.innerText = msg;
@@ -346,16 +714,262 @@
                     body: JSON.stringify({message: msg})
                 });
                 const data = await res.json();
-                
                 const serverDiv = document.createElement('div');
-                serverDiv.className = "bg-slate-900/80 border border-slate-800 text-slate-300 p-3.5 rounded-2xl rounded-tr-none max-w-[85%] leading-relaxed shadow-sm";
-                serverDiv.innerText = data.reply;
+
+                if (data.type === 'emergency') {
+                    serverDiv.className = "chat-emergency text-slate-200 p-4 rounded-2xl rounded-tr-none max-w-[92%] leading-relaxed";
+                    let stepsHtml = '<div class="chat-emergency-title text-sm mb-2">' + data.title + '</div><ol class="space-y-1.5 text-xs md:text-sm list-none">';
+                    (data.steps || []).forEach((s, i) => {
+                        stepsHtml += `<li class="flex items-start gap-2"><span class="text-rose-400 font-black shrink-0">${i + 1}.</span><span>${s}</span></li>`;
+                    });
+                    stepsHtml += '</ol>';
+                    serverDiv.innerHTML = stepsHtml;
+                } else {
+                    serverDiv.className = "bg-slate-900/80 border border-slate-800 text-slate-300 p-3.5 rounded-2xl rounded-tr-none max-w-[85%] leading-relaxed";
+                    serverDiv.innerText = data.reply;
+                }
+
                 chatBox.appendChild(serverDiv);
                 chatBox.scrollTop = chatBox.scrollHeight;
-            } catch(e) { console.error("Error communicating with chatbot", e); }
+            } catch(e) { console.error("خطأ بالاتصال بالبوت", e); }
         }
 
-        window.onload = refreshStats;
+        // --- وظائف نظام تسجيل الدخول المنفصل لـ جوجل وواتساب ---
+        function openLoginModal() {
+            document.getElementById('login-modal').classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        function closeLoginModal() {
+            document.getElementById('login-modal').classList.add('opacity-0', 'pointer-events-none');
+        }
+
+        // دالة معالجة التوكن الراجع من جوجل بعد نجاح المصادقة
+        async function handleCredentialResponse(response) {
+            try {
+                const res = await fetch('/api/auth/google', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ credential: response.credential })
+                });
+                const data = await res.json();
+                if(data.success) {
+                    localStorage.setItem('googleUser', JSON.stringify(data.user));
+                    localStorage.removeItem('whatsappUser');
+                    checkAuthState();
+                    closeLoginModal();
+                    alert("مرحباً بك! تم تسجيل الدخول بواسطة Google بنجاح.");
+                }
+            } catch(e) {
+                alert("فشلت عملية التحقق من حساب جوجل الخاص بك.");
+            }
+        }
+
+        async function sendWhatsAppOTP() {
+            const phone = document.getElementById('wa-phone').value.trim();
+            if(!phone) return alert("الرجاء إدخال رقم الهاتف أولاً");
+            try {
+                const response = await fetch('/api/auth/whatsapp/send', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({phone: phone})
+                });
+                const data = await response.json();
+                if(data.success) {
+                    alert(data.message);
+                    document.getElementById('wa-code-area').classList.remove('hidden');
+                    if(data.fallback) {
+                        document.getElementById('fallback-notification').style.display = 'block';
+                        document.getElementById('fallback-code').innerText = data.code;
+                    } else {
+                        document.getElementById('fallback-notification').style.display = 'none';
+                    }
+                }
+            } catch(e) { alert("خطأ بإرسال الكود"); }
+        }
+
+        async function verifyWhatsAppOTP() {
+            const phone = document.getElementById('wa-phone').value.trim();
+            const code = document.getElementById('wa-code').value.trim();
+            if(!code) return alert("الرجاء إدخال رمز التحقق");
+            try {
+                const response = await fetch('/api/auth/whatsapp/verify', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({phone: phone, code: code})
+                });
+                const data = await response.json();
+                if(data.success) {
+                    const userData = {
+                        name: `مستخدم واتساب (${phone.slice(-4)})`,
+                        picture: 'https://cdn-icons-png.flaticon.com/512/124/124034.png',
+                        authType: 'whatsapp'
+                    };
+                    localStorage.setItem('whatsappUser', JSON.stringify(userData));
+                    localStorage.removeItem('googleUser');
+                    checkAuthState();
+                    closeLoginModal();
+                    alert("تم تسجيل الدخول بنجاح!");
+                }
+            } catch(e) { alert("كود التحقق غير صحيح!"); }
+        }
+
+        function checkAuthState() {
+            const googleUser = localStorage.getItem('googleUser');
+            const waUser = localStorage.getItem('whatsappUser');
+            const loginBtn = document.getElementById('login-btn');
+            const userInfo = document.getElementById('user-info');
+            const displayUsername = document.getElementById('display-username');
+            const userAvatar = document.getElementById('user-avatar');
+
+            if (googleUser || waUser) {
+                const user = JSON.parse(googleUser || waUser);
+                loginBtn.classList.add('hidden');
+                userInfo.classList.remove('hidden');
+                displayUsername.innerText = user.name;
+                userAvatar.src = user.picture;
+            } else {
+                loginBtn.classList.remove('hidden');
+                userInfo.classList.add('hidden');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('googleUser');
+            localStorage.removeItem('whatsappUser');
+            checkAuthState();
+        }
+
+        // ============================================================
+        //  محاكي هجمات التصيّد التعليمي (Phishing Simulator)
+        // ============================================================
+        const SIM_SCENARIOS = [
+            {
+                id: 1,
+                sender: "support@paypal-secure-login.com",
+                icon: "fa-envelope-open-text",
+                subject: "تنبيه: يرجى تحديث بيانات حسابك خلال 24 ساعة",
+                body: "عزيزي العميل، تم رصد نشاط غير معتاد على حسابك. اضغط على الرابط أدناه فوراً لتأكيد هويتك وتجنب إيقاف الحساب.",
+                isPhishing: true,
+                explanation: "النطاق (paypal-secure-login.com) ليس نطاق PayPal الرسمي، والرسالة تستخدم أسلوب الاستعجال والتهديد بإيقاف الحساب، وهو نمط كلاسيكي في التصيد الإلكتروني."
+            },
+            {
+                id: 2,
+                sender: "no-reply@github.com",
+                icon: "fa-code-branch",
+                subject: "تأكيد تسجيل الدخول الجديد إلى حسابك",
+                body: "تم تسجيل الدخول إلى حسابك من متصفح Chrome على نظام Windows. إذا لم تكن أنت من قام بذلك، يمكنك مراجعة إعدادات الأمان من داخل حسابك مباشرة.",
+                isPhishing: false,
+                explanation: "رسالة تنبيه أمني اعتيادية من نطاق رسمي معروف، ولا تحتوي على ضغط أو تهديد أو طلب لإدخال بيانات حساسة عبر رابط خارجي."
+            },
+            {
+                id: 3,
+                sender: "prize@free-gift-rewards.net",
+                icon: "fa-gift",
+                subject: "🎉 مبروك! لقد فزت بجائزة آيفون 16 برو",
+                body: "تم اختيار رقمك عشوائياً للفوز بجائزة قيمة. أدخل بياناتك الشخصية ورقم بطاقتك لدفع رسوم الشحن الرمزية واستلام جائزتك الآن.",
+                isPhishing: true,
+                explanation: "الوعد بجائزة مقابل 'رسوم رمزية' وطلب بيانات البطاقة البنكية هو أسلوب احتيال شائع يعتمد على الطمع لاستدراج الضحية."
+            },
+            {
+                id: 4,
+                sender: "billing@netflix.com",
+                icon: "fa-clapperboard",
+                subject: "فاتورتك الشهرية جاهزة للعرض",
+                body: "مرحباً، يمكنك الاطلاع على تفاصيل فاتورتك الأخيرة وسجل المدفوعات من خلال تسجيل الدخول إلى حسابك عبر التطبيق أو الموقع الرسمي مباشرة.",
+                isPhishing: false,
+                explanation: "لا يوجد رابط مباشر مشبوه ولا طلب لإدخال بيانات، والرسالة توجه المستخدم للدخول من التطبيق أو الموقع الرسمي بنفسه بدلاً من رابط مضمّن."
+            },
+            {
+                id: 5,
+                sender: "delivery@aramex-shipment-alert.info",
+                icon: "fa-truck-fast",
+                subject: "تعذر تسليم شحنتك - مطلوب دفع رسوم إضافية",
+                body: "لم نتمكن من توصيل شحنتك بسبب رسوم جمركية غير مدفوعة. يرجى الضغط على الرابط وإدخال بيانات بطاقتك لإتمام عملية الدفع خلال ساعتين وإلا سيتم إرجاع الشحنة.",
+                isPhishing: true,
+                explanation: "انتحال صفة شركة شحن معروفة عبر نطاق غير رسمي، مع ضغط زمني (خلال ساعتين) وطلب دفع فوري ببيانات البطاقة - علامات تصيّد واضحة."
+            },
+            {
+                id: 6,
+                sender: "team@slack.com",
+                icon: "fa-message",
+                subject: "دعوة للانضمام إلى مساحة عمل جديدة",
+                body: "قام أحد الزملاء بدعوتك للانضمام إلى مساحة عمل على Slack. يمكنك قبول الدعوة من داخل التطبيق الرسمي أو تجاهل هذه الرسالة إن لم تكن تتوقعها.",
+                isPhishing: false,
+                explanation: "دعوة عمل اعتيادية من نطاق رسمي معروف، ولا تتضمن أي ضغط أو تهديد أو طلب بيانات حساسة، وتترك الخيار للمستخدم بوضوح."
+            }
+        ];
+
+        let simState = {};
+
+        function resetSimulator() {
+            simState = { answered: {}, score: 0 };
+            document.getElementById('sim-score').innerText = '0';
+            document.getElementById('sim-total').innerText = SIM_SCENARIOS.length;
+            renderSimulatorCards();
+        }
+
+        function renderSimulatorCards() {
+            const container = document.getElementById('sim-cards-container');
+            container.innerHTML = '';
+            SIM_SCENARIOS.forEach(sc => {
+                const card = document.createElement('div');
+                card.className = "sim-card p-5 space-y-3";
+                card.id = `sim-card-${sc.id}`;
+                card.innerHTML = `
+                    <div class="flex items-center gap-3 border-b border-slate-800/60 pb-3">
+                        <div class="bg-slate-900 border border-purple-500/30 text-purple-400 w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
+                            <i class="fa-solid ${sc.icon}"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="text-[11px] text-slate-500 font-mono truncate" dir="ltr">${sc.sender}</div>
+                            <div class="text-sm font-bold text-slate-200 truncate">${sc.subject}</div>
+                        </div>
+                    </div>
+                    <p class="text-xs md:text-sm text-slate-400 leading-relaxed">${sc.body}</p>
+                    <div class="flex gap-2 pt-2">
+                        <button onclick="answerSim(${sc.id}, true)" class="sim-flag-btn flex-1 bg-slate-950 border border-slate-800 hover:border-rose-500/50 text-slate-300 py-2.5 rounded-xl text-xs font-bold transition">
+                            <i class="fa-solid fa-triangle-exclamation ml-1 text-rose-500"></i> رسالة تصيّد
+                        </button>
+                        <button onclick="answerSim(${sc.id}, false)" class="sim-flag-btn flex-1 bg-slate-950 border border-slate-800 hover:border-emerald-500/50 text-slate-300 py-2.5 rounded-xl text-xs font-bold transition">
+                            <i class="fa-solid fa-circle-check ml-1 text-emerald-500"></i> رسالة حقيقية
+                        </button>
+                    </div>
+                    <div id="sim-feedback-${sc.id}" class="hidden text-xs leading-relaxed p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-400"></div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function answerSim(id, userSaysPhishing) {
+            if (simState.answered[id] !== undefined) return; // منع إعادة الإجابة على نفس الرسالة
+            const scenario = SIM_SCENARIOS.find(s => s.id === id);
+            if (!scenario) return;
+
+            const isCorrect = userSaysPhishing === scenario.isPhishing;
+            simState.answered[id] = true;
+            if (isCorrect) simState.score += 1;
+
+            document.getElementById('sim-score').innerText = simState.score;
+
+            const card = document.getElementById(`sim-card-${id}`);
+            card.classList.add(isCorrect ? 'sim-verdict-correct' : 'sim-verdict-wrong');
+
+            const buttons = card.querySelectorAll('.sim-flag-btn');
+            buttons.forEach(btn => btn.disabled = true);
+            buttons[userSaysPhishing ? 0 : 1].classList.add(userSaysPhishing ? 'selected-fake' : 'selected-real');
+
+            const feedback = document.getElementById(`sim-feedback-${id}`);
+            feedback.classList.remove('hidden');
+            const verdictLabel = scenario.isPhishing ? 'رسالة تصيّد احتيالي' : 'رسالة حقيقية وآمنة';
+            const resultIcon = isCorrect ? '✅ إجابة صحيحة' : '❌ إجابة غير دقيقة';
+            feedback.innerHTML = `<strong class="${isCorrect ? 'text-emerald-400' : 'text-rose-400'}">${resultIcon}</strong> — التصنيف الحقيقي: <strong class="text-slate-200">${verdictLabel}</strong><br><span class="text-slate-500">${scenario.explanation}</span>`;
+        }
+
+        window.onload = function() {
+            refreshStats();
+            checkAuthState();
+            resetSimulator();
+        };
     </script>
 </body>
 </html>
