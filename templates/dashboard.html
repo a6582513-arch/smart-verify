@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة التحكم - سجل التحقق | Smart Verify</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght=300;400;600;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #030712;
+            background-image:
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(217, 70, 239, 0.1) 0px, transparent 50%);
+            color: #f3f4f6;
+            min-height: 100vh;
+        }
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+        .neon-text-cyan { text-shadow: 0 0 8px rgba(6, 182, 212, 0.6); }
+        .neon-text-purple { text-shadow: 0 0 8px rgba(168, 85, 247, 0.6); }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .history-row {
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid rgba(255,255,255,0.06);
+            transition: all 0.25s ease;
+        }
+        .history-row:hover {
+            border-color: rgba(6, 182, 212, 0.35);
+            transform: translateX(-3px);
+        }
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.04) 63%);
+            background-size: 400% 100%;
+            animation: skeleton-loading 1.4s ease infinite;
+        }
+        @keyframes skeleton-loading {
+            0% { background-position: 100% 50%; }
+            100% { background-position: 0 50%; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-5xl mx-auto space-y-8">
+
+        <!-- الترويسة -->
+        <div class="flex items-center justify-between flex-wrap gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-2xl bg-slate-900 border border-cyan-500/30 flex items-center justify-center text-cyan-400 text-xl">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-black font-orbitron neon-text-cyan">لوحة التحكم</h1>
+                    <p class="text-slate-500 text-xs">سجل عمليات التحقق الخاص بحسابك</p>
+                </div>
+            </div>
+            <a href="/" class="bg-slate-900 border border-slate-700 hover:border-cyan-500/50 text-slate-300 px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2">
+                <i class="fa-solid fa-arrow-right"></i> العودة للمنصة
+            </a>
+        </div>
+
+        <!-- حالة عدم تسجيل الدخول -->
+        <div id="no-auth-box" class="hidden glass-panel rounded-3xl p-10 text-center space-y-4">
+            <i class="fa-solid fa-lock text-4xl text-slate-600"></i>
+            <h2 class="text-lg font-bold text-slate-300">يجب تسجيل الدخول بحساب Google</h2>
+            <p class="text-slate-500 text-sm max-w-md mx-auto">سجل التحقق مرتبط بحساب Google الذي تستخدمه. سجّل الدخول من الصفحة الرئيسية أولاً لعرض سجلّك الشخصي.</p>
+            <a href="/" class="inline-block bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-3 rounded-xl text-sm font-bold transition">الذهاب لتسجيل الدخول</a>
+        </div>
+
+        <!-- محتوى اللوحة (يظهر بعد التأكد من تسجيل الدخول) -->
+        <div id="dashboard-content" class="hidden space-y-8">
+
+            <!-- بطاقة معلومات المستخدم -->
+            <div class="glass-panel rounded-3xl p-5 flex items-center gap-4">
+                <img id="dash-avatar" src="" class="w-14 h-14 rounded-full border-2 border-cyan-500/40" alt="avatar">
+                <div>
+                    <div id="dash-username" class="font-bold text-white"></div>
+                    <div id="dash-email" class="text-slate-500 text-xs font-mono" dir="ltr"></div>
+                </div>
+            </div>
+
+            <!-- إحصائيات موجزة -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="glass-panel rounded-2xl p-5 text-center">
+                    <div id="stat-total" class="text-2xl md:text-3xl font-black text-cyan-400 neon-text-cyan font-orbitron">0</div>
+                    <div class="text-slate-500 text-[11px] mt-1">إجمالي الفحوصات</div>
+                </div>
+                <div class="glass-panel rounded-2xl p-5 text-center">
+                    <div id="stat-danger" class="text-2xl md:text-3xl font-black text-rose-500 font-orbitron">0</div>
+                    <div class="text-slate-500 text-[11px] mt-1">نتائج خطرة</div>
+                </div>
+                <div class="glass-panel rounded-2xl p-5 text-center">
+                    <div id="stat-safe" class="text-2xl md:text-3xl font-black text-emerald-400 font-orbitron">0</div>
+                    <div class="text-slate-500 text-[11px] mt-1">نتائج آمنة</div>
+                </div>
+                <div class="glass-panel rounded-2xl p-5 text-center">
+                    <div id="stat-latest" class="text-sm md:text-base font-black text-purple-400 neon-text-purple font-orbitron">-</div>
+                    <div class="text-slate-500 text-[11px] mt-1">آخر فحص</div>
+                </div>
+            </div>
+
+            <!-- قائمة السجل -->
+            <div class="glass-panel rounded-3xl p-6 md:p-8">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2 mb-5">
+                    <span class="w-1.5 h-4 bg-cyan-400 rounded-full"></span> سجل عمليات التحقق
+                </h3>
+
+                <div id="loading-skeleton" class="space-y-3">
+                    <div class="skeleton h-16 rounded-2xl"></div>
+                    <div class="skeleton h-16 rounded-2xl"></div>
+                    <div class="skeleton h-16 rounded-2xl"></div>
+                </div>
+
+                <div id="history-empty" class="hidden text-center py-14 text-slate-500">
+                    <i class="fa-regular fa-folder-open text-3xl mb-3 block"></i>
+                    لم تقم بأي عملية فحص بعد، أو أن ميزة السجل الدائم غير مفعّلة على الخادم.
+                </div>
+
+                <div id="history-list" class="space-y-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TYPE_ICONS = {
+            "رابط (URL)": "fa-link",
+            "رسالة نصية": "fa-comment-dots",
+            "صورة": "fa-image"
+        };
+
+        function timeAgo(isoString) {
+            try {
+                const date = new Date(isoString);
+                const diffMs = Date.now() - date.getTime();
+                const mins = Math.floor(diffMs / 60000);
+                if (mins < 1) return "الآن";
+                if (mins < 60) return `منذ ${mins} دقيقة`;
+                const hours = Math.floor(mins / 60);
+                if (hours < 24) return `منذ ${hours} ساعة`;
+                const days = Math.floor(hours / 24);
+                if (days < 30) return `منذ ${days} يوم`;
+                return date.toLocaleDateString('ar-EG');
+            } catch (e) { return isoString; }
+        }
+
+        function renderHistory(records) {
+            const list = document.getElementById('history-list');
+            const empty = document.getElementById('history-empty');
+            document.getElementById('loading-skeleton').classList.add('hidden');
+
+            if (!records || records.length === 0) {
+                empty.classList.remove('hidden');
+                return;
+            }
+
+            let dangerCount = 0, safeCount = 0;
+            records.forEach(r => { (r.risk_score >= 50) ? dangerCount++ : safeCount++; });
+
+            document.getElementById('stat-total').innerText = records.length;
+            document.getElementById('stat-danger').innerText = dangerCount;
+            document.getElementById('stat-safe').innerText = safeCount;
+            document.getElementById('stat-latest').innerText = timeAgo(records[0].created_at);
+
+            list.innerHTML = '';
+            records.forEach(r => {
+                const isDanger = r.risk_score >= 50;
+                const row = document.createElement('div');
+                row.className = "history-row rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap";
+                row.innerHTML = `
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-10 h-10 rounded-xl ${isDanger ? 'bg-rose-950/40 text-rose-400' : 'bg-emerald-950/40 text-emerald-400'} flex items-center justify-center shrink-0">
+                            <i class="fa-solid ${TYPE_ICONS[r.scan_type] || 'fa-magnifying-glass'}"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="text-xs text-slate-500">${r.scan_type} • ${timeAgo(r.created_at)}</div>
+                            <div class="text-sm text-slate-200 truncate max-w-[320px]" dir="ltr">${r.subject || '-'}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0">
+                        <span class="px-3 py-1 rounded-full text-[10px] font-black ${isDanger ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}">${r.status}</span>
+                        <span class="text-sm font-black ${isDanger ? 'text-rose-400' : 'text-emerald-400'} w-12 text-center">${r.risk_score}%</span>
+                    </div>
+                `;
+                list.appendChild(row);
+            });
+        }
+
+        async function loadDashboard() {
+            const googleUser = localStorage.getItem('googleUser');
+            if (!googleUser) {
+                document.getElementById('no-auth-box').classList.remove('hidden');
+                return;
+            }
+            const user = JSON.parse(googleUser);
+            document.getElementById('dashboard-content').classList.remove('hidden');
+            document.getElementById('dash-avatar').src = user.picture;
+            document.getElementById('dash-username').innerText = user.name;
+            document.getElementById('dash-email').innerText = user.email;
+
+            try {
+                const res = await fetch(`/api/history?email=${encodeURIComponent(user.email)}`);
+                const data = await res.json();
+                renderHistory(data.records || []);
+            } catch (e) {
+                document.getElementById('loading-skeleton').classList.add('hidden');
+                document.getElementById('history-empty').classList.remove('hidden');
+            }
+        }
+
+        window.onload = loadDashboard;
+    </script>
+</body>
+</html>

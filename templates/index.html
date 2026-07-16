@@ -318,7 +318,10 @@
                     <i class="fa-solid fa-code-compare ml-2"></i>فحص الرسائل
                 </button>
                 <button onclick="switchTab('image-tab')" id="btn-image-tab" class="tab-btn pb-3 px-6 text-slate-400 border-b-2 border-transparent hover:text-slate-200 focus:outline-none transition duration-300">
-                    <i class="fa-solid fa-camera-retro ml-2"></i>الميتا داتا للصور
+                    <i class="fa-solid fa-camera-retro ml-2"></i>الصور (ميتاداتا + AI)
+                </button>
+                <button onclick="switchTab('password-tab')" id="btn-password-tab" class="tab-btn pb-3 px-6 text-slate-400 border-b-2 border-transparent hover:text-slate-200 focus:outline-none transition duration-300">
+                    <i class="fa-solid fa-key ml-2"></i>قوة كلمة السر
                 </button>
             </div>
 
@@ -346,15 +349,124 @@
 
             <div id="image-tab" class="tab-content hidden space-y-4">
                 <div class="space-y-2">
-                    <label class="block text-slate-400 text-sm font-semibold">تحميل ملف الصورة لفحص الميتاداتا الهيكلية EXIF:</label>
+                    <label class="block text-slate-400 text-sm font-semibold">تحميل صورة لفحص الميتاداتا EXIF، ومطابقة بصمتها مع VirusTotal، وتحليل أي نص داخلها بالذكاء الاصطناعي (OCR) لرصد انتحال الجهات الرسمية:</label>
                     <div class="border border-dashed border-slate-800 rounded-xl p-8 text-center bg-slate-950/50 hover:bg-slate-950 hover:border-cyan-500/50 transition duration-300 relative group">
                         <input type="file" id="image-input" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="displayFileName()">
                         <i class="fa-solid fa-circle-nodes text-slate-700 text-4xl mb-3 group-hover:text-cyan-500 transition duration-300"></i>
                         <p class="text-slate-300 font-semibold text-sm" id="file-label">اسحب ملف الصورة أو انقر للتصفح</p>
                     </div>
                     <button onclick="scanImage()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2">
-                        <i class="fa-solid fa-radar"></i> فحص الميتاداتا العميقة
+                        <i class="fa-solid fa-radar"></i> فحص الصورة بالكامل
                     </button>
+                </div>
+            </div>
+
+            <div id="password-tab" class="tab-content hidden space-y-5">
+                <div class="space-y-2">
+                    <label class="block text-slate-400 text-sm font-semibold">أدخل كلمة السر لتقييم مدى قوتها وصعوبة اختراقها:</label>
+                    <div class="relative">
+                        <input type="password" id="password-input" oninput="analyzePasswordLive()" placeholder="••••••••••••" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3.5 pl-12 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 text-left text-cyan-300 placeholder-slate-700 font-mono" dir="ltr" autocomplete="new-password" spellcheck="false">
+                        <button type="button" onclick="togglePasswordVisibility()" id="pw-toggle-btn" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center justify-between flex-wrap gap-2">
+                        <p class="text-[11px] text-emerald-500/80 flex items-center gap-1.5">
+                            <i class="fa-solid fa-lock"></i> هذا الفحص يتم بالكامل داخل متصفحك — كلمة السر لا تُرسل أبداً لأي خادم.
+                        </p>
+                        <p id="pw-db-status" class="text-[11px] text-slate-600 flex items-center gap-1.5">
+                            <i class="fa-solid fa-database"></i> جاري تحميل قاعدة الكلمات الشائعة...
+                        </p>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-500 uppercase tracking-wider">مستوى القوة</span>
+                        <span id="pw-strength-label" class="text-xs font-black">-</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-slate-950 border border-slate-800 rounded-full overflow-hidden">
+                        <div id="pw-strength-bar" class="h-full rounded-full transition-all duration-300" style="width: 0%; background: #475569;"></div>
+                    </div>
+                    <div class="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>نسبة القوة: <span id="pw-strength-percent" class="text-slate-300 font-bold">0%</span></span>
+                        <span>الإنتروبيا (Entropy): <span id="pw-entropy" class="text-slate-300 font-bold font-mono" dir="ltr">0 bits</span></span>
+                    </div>
+                </div>
+
+                <!-- جدول زمن الكسر لعدة سيناريوهات هجوم -->
+                <div class="bg-slate-950/60 border border-indigo-500/20 rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center gap-2 text-indigo-300 text-xs font-bold">
+                        <i class="fa-solid fa-stopwatch"></i> الوقت التقريبي اللازم لكسرها (بحسب نوع الهجوم):
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2" id="pw-crack-scenarios">
+                        <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">تخمين عبر الإنترنت (مُقيّد)</div>
+                            <div id="pw-crack-online" class="text-sm font-black text-emerald-400 font-orbitron">-</div>
+                        </div>
+                        <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">تسريب + تجزئة بطيئة (bcrypt)</div>
+                            <div id="pw-crack-offline-slow" class="text-sm font-black text-amber-400 font-orbitron">-</div>
+                        </div>
+                        <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">تسريب + كسر بمعالج GPU سريع</div>
+                            <div id="pw-crack-offline-fast" class="text-sm font-black text-rose-400 font-orbitron">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <ul id="pw-criteria-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs"></ul>
+
+                <!-- المشاكل المكتشفة تحديداً -->
+                <div id="pw-issues-box" class="hidden bg-rose-950/20 border border-rose-500/30 rounded-2xl p-4 space-y-2">
+                    <div class="text-xs font-bold text-rose-300 flex items-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation"></i> مشاكل محددة تم رصدها:
+                    </div>
+                    <ul id="pw-issues-list" class="text-xs text-rose-200/80 space-y-1.5 list-none"></ul>
+                </div>
+
+                <!-- اقتراحات التحسين -->
+                <div id="pw-suggestions-box" class="hidden bg-cyan-950/20 border border-cyan-500/30 rounded-2xl p-4 space-y-2">
+                    <div class="text-xs font-bold text-cyan-300 flex items-center gap-2">
+                        <i class="fa-solid fa-lightbulb"></i> اقتراحات لتحسين كلمة السر:
+                    </div>
+                    <ul id="pw-suggestions-list" class="text-xs text-cyan-200/80 space-y-1.5 list-none"></ul>
+                </div>
+
+                <!-- مولّد كلمات مرور قوية -->
+                <div class="border-t border-slate-800 pt-5 space-y-4">
+                    <div class="flex items-center gap-2 text-white font-bold text-sm">
+                        <i class="fa-solid fa-wand-magic-sparkles text-purple-400"></i> مولّد كلمات سر قوية عشوائياً
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="pw-gen-output" readonly placeholder="اضغط «توليد» لإنشاء كلمة سر قوية" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3.5 focus:outline-none focus:border-purple-500 text-left text-emerald-300 placeholder-slate-700 font-mono text-sm" dir="ltr">
+                        <button type="button" onclick="copyGeneratedPassword()" id="pw-gen-copy-btn" title="نسخ" class="bg-slate-900 border border-slate-800 hover:border-purple-500 text-slate-400 hover:text-purple-300 w-12 h-12 shrink-0 rounded-xl flex items-center justify-center transition">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                        <div class="space-y-1.5">
+                            <div class="flex items-center justify-between text-xs text-slate-400">
+                                <span>طول كلمة السر</span>
+                                <span id="pw-gen-length-label" class="text-purple-300 font-bold font-mono">16</span>
+                            </div>
+                            <input type="range" id="pw-gen-length" min="8" max="64" value="16" oninput="document.getElementById('pw-gen-length-label').innerText = this.value" class="w-full accent-purple-500">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs text-slate-400">
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="pw-gen-upper" checked class="accent-purple-500"> أحرف كبيرة (A-Z)</label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="pw-gen-lower" checked class="accent-purple-500"> أحرف صغيرة (a-z)</label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="pw-gen-digits" checked class="accent-purple-500"> أرقام (0-9)</label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="pw-gen-symbols" checked class="accent-purple-500"> رموز (!@#$...)</label>
+                            <label class="flex items-center gap-2 cursor-pointer col-span-2"><input type="checkbox" id="pw-gen-exclude-ambiguous" class="accent-purple-500"> استبعاد الأحرف المتشابهة (0/O، 1/l/I)</label>
+                        </div>
+                    </div>
+
+                    <button type="button" onclick="generateStrongPassword()" class="bg-purple-600 hover:bg-purple-500 text-white px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2 w-full md:w-auto justify-center">
+                        <i class="fa-solid fa-dice"></i> توليد كلمة سر قوية
+                    </button>
+                    <p id="pw-gen-error" class="hidden text-[11px] text-rose-400"></p>
                 </div>
             </div>
 
@@ -994,11 +1106,399 @@
             feedback.innerHTML = `<strong class="${isCorrect ? 'text-emerald-400' : 'text-rose-400'}">${resultIcon}</strong> — التصنيف الحقيقي: <strong class="text-slate-200">${verdictLabel}</strong><br><span class="text-slate-500">${scenario.explanation}</span>`;
         }
 
+        // ============================================================
+        //  فحص مدى أمان وفعالية كلمة السر (Password Strength Checker)
+        //  يعمل بالكامل داخل المتصفح — لا يتم إرسال كلمة السر لأي خادم إطلاقاً
+        // ============================================================
+
+        // مجموعة صغيرة فورية (تعمل فوراً قبل اكتمال تحميل القاعدة الكبيرة أو في حال فشل التحميل)
+        const FALLBACK_COMMON_PASSWORDS = [
+            "123456", "password", "123456789", "12345678", "qwerty", "111111",
+            "123123", "abc123", "iloveyou", "admin", "welcome", "monkey",
+            "letmein", "000000", "1234567", "12345", "1234567890", "password1",
+            "qwerty123", "1q2w3e4r", "dragon", "master", "sunshine", "football",
+            "asdfgh", "123321", "666666", "654321", "trustno1", "starwars",
+            "princess", "superman", "batman", "hunter", "freedom", "whatever"
+        ];
+
+        // قاعدة الكلمات الشائعة الكبيرة (100,000+ كلمة) تُحمَّل بشكل غير متزامن (Lazy Load)
+        // من ملف ثابت خفيف الحجم بعد الضغط (Gzip)، بدلاً من تضمينها في الصفحة مباشرة،
+        // حفاظاً على سرعة التحميل الأولي للصفحة (خصوصاً على الجوال).
+        const PW_DB_CACHE_KEY = 'sv_common_pw_db_v1';
+        let commonPasswordsSet = new Set(FALLBACK_COMMON_PASSWORDS);
+        let commonPasswordsReady = false;
+
+        async function loadCommonPasswordsDB() {
+            const statusEl = document.getElementById('pw-db-status');
+            try {
+                let text = null;
+                try {
+                    text = sessionStorage.getItem(PW_DB_CACHE_KEY);
+                } catch (e) { /* التخزين المحلي قد يكون معطّلاً - نتجاهل الخطأ */ }
+
+                if (!text) {
+                    const res = await fetch('/static/common-passwords.txt');
+                    if (!res.ok) throw new Error('تعذّر تحميل قاعدة البيانات');
+                    text = await res.text();
+                    try { sessionStorage.setItem(PW_DB_CACHE_KEY, text); } catch (e) { /* تجاهل امتلاء التخزين */ }
+                }
+
+                const words = text.split('\n').filter(Boolean);
+                commonPasswordsSet = new Set(words);
+                commonPasswordsReady = true;
+                if (statusEl) {
+                    statusEl.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-500"></i> تم تحميل قاعدة تضم ${commonPasswordsSet.size.toLocaleString('ar-EG')} كلمة سر شائعة`;
+                }
+            } catch (e) {
+                if (statusEl) {
+                    statusEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-500"></i> تعذّر تحميل القاعدة الكاملة، يتم الاعتماد على قائمة مصغّرة مؤقتاً`;
+                }
+            }
+            // أعِد تحليل كلمة السر الحالية إن وُجدت بعد اكتمال التحميل
+            analyzePasswordLive();
+        }
+
+        // ===== أنماط لوحة المفاتيح (لاتيني وعربي) لرصد كلمات مثل qwerty وضصثقف =====
+        const KEYBOARD_ROWS = [
+            "qwertyuiop", "asdfghjkl", "zxcvbnm", "1234567890",
+            "ضصثقفغعهخحجد", "شسيبلاتنمكط", "ئءؤرلاىةوزظ"
+        ];
+
+        // خريطة عكسية مبسّطة للـ leetspeak لتحويل الأحرف البديلة لأصلها قبل مطابقتها بالقاموس
+        const LEET_REVERSE_MAP = { '@': 'a', '0': 'o', '1': 'i', '3': 'e', '$': 's', '5': 's', '7': 't', '!': 'i' };
+
+        function normalizeForDictionary(password) {
+            let s = password.toLowerCase();
+            let out = '';
+            for (const ch of s) out += (LEET_REVERSE_MAP[ch] !== undefined ? LEET_REVERSE_MAP[ch] : ch);
+            return out;
+        }
+
+        function detectCommonWord(password) {
+            if (!password) return null;
+            const lower = password.toLowerCase();
+            if (commonPasswordsSet.has(lower)) return lower;
+
+            const normalized = normalizeForDictionary(password);
+            if (commonPasswordsSet.has(normalized)) return normalized;
+
+            // إزالة الأرقام/الرموز من البداية والنهاية (نمط شائع: "Password123!" أو "2023summer")
+            const stripped = normalized.replace(/^[^a-z\u0600-\u06FF]+|[^a-z\u0600-\u06FF]+$/g, '');
+            if (stripped && stripped.length >= 4 && commonPasswordsSet.has(stripped)) return stripped;
+
+            return null;
+        }
+
+        function detectRepetition(password) {
+            // تكرار حرف واحد 3 مرات فأكثر (aaa، ججج)
+            if (/(.)\1{2,}/.test(password)) return true;
+            // تكرار مقطع من حرفين أو ثلاثة (ababab، abcabc)
+            if (/(..+?)\1{1,}/.test(password) && password.length >= 4) {
+                const m = password.match(/(.{2,4})\1+/);
+                if (m && m[0].length >= 4) return true;
+            }
+            return false;
+        }
+
+        function detectSequence(password) {
+            const s = password.toLowerCase();
+            let runUp = 1, runDown = 1;
+            for (let i = 1; i < s.length; i++) {
+                const a = s.charCodeAt(i - 1), b = s.charCodeAt(i);
+                runUp = (b === a + 1) ? runUp + 1 : 1;
+                runDown = (b === a - 1) ? runDown + 1 : 1;
+                if (runUp >= 3 || runDown >= 3) return true; // مثال: 123، abc، 987، cba
+            }
+            return false;
+        }
+
+        function detectKeyboardPattern(password) {
+            const s = password.toLowerCase();
+            for (const row of KEYBOARD_ROWS) {
+                const rowLower = row.toLowerCase();
+                const rowRev = rowLower.split('').reverse().join('');
+                for (let len = Math.min(6, rowLower.length); len >= 4; len--) {
+                    for (let i = 0; i + len <= rowLower.length; i++) {
+                        const chunk = rowLower.slice(i, i + len);
+                        const chunkRev = rowRev.slice(i, i + len);
+                        if (s.includes(chunk) || s.includes(chunkRev)) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function togglePasswordVisibility() {
+            const input = document.getElementById('password-input');
+            const btn = document.getElementById('pw-toggle-btn');
+            if (input.type === 'password') {
+                input.type = 'text';
+                btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+            } else {
+                input.type = 'password';
+                btn.innerHTML = '<i class="fa-solid fa-eye"></i>';
+            }
+        }
+
+        function formatDuration(seconds) {
+            if (seconds < 1) return "أقل من ثانية";
+            const units = [
+                { label: "قرون", secs: 100 * 365 * 24 * 3600 },
+                { label: "سنة", secs: 365 * 24 * 3600 },
+                { label: "شهر", secs: 30 * 24 * 3600 },
+                { label: "يوم", secs: 24 * 3600 },
+                { label: "ساعة", secs: 3600 },
+                { label: "دقيقة", secs: 60 },
+            ];
+            for (const u of units) {
+                if (seconds >= u.secs) {
+                    const value = seconds / u.secs;
+                    if (value > 1_000_000) return "أكثر من مليون " + u.label;
+                    return Math.round(value).toLocaleString('ar-EG') + " " + u.label;
+                }
+            }
+            return Math.round(seconds) + " ثانية";
+        }
+
+        // سيناريوهات هجوم واقعية مختلفة (محاولات في الثانية)
+        const ATTACK_SCENARIOS = {
+            online: 100 / 3600,          // تسجيل دخول عبر الإنترنت مع حماية/تحديد محاولات: 100 محاولة/ساعة
+            offlineSlow: 10_000,          // تجزئة بطيئة موصى بها (bcrypt/scrypt/argon2) على عتاد عادي
+            offlineFast: 10_000_000_000,  // تجزئة سريعة غير محمية (MD5/SHA1) على مجموعة GPU حديثة
+        };
+
+        function estimateSecondsFromEntropy(entropyBits, guessesPerSecond) {
+            const combinations = Math.pow(2, entropyBits);
+            return combinations / guessesPerSecond / 2; // بالمتوسط نصف فراغ الاحتمالات
+        }
+
+        function generateSuggestions(password, flags) {
+            const tips = [];
+            if (!password) return tips;
+            if (flags.isCommon) tips.push("هذه كلمة سر شائعة جداً ومعروفة لدى المهاجمين — استبدلها بالكامل ولا تكتفِ بتعديل بسيط عليها.");
+            if (password.length < 12) tips.push("أطِل كلمة السر إلى 12 حرفاً على الأقل — الطول أهم عامل في رفع الإنتروبيا وزمن الكسر.");
+            if (!flags.hasUpper) tips.push("أضف حرفاً كبيراً واحداً على الأقل (A-Z).");
+            if (!flags.hasLower) tips.push("أضف حرفاً صغيراً واحداً على الأقل (a-z).");
+            if (!flags.hasDigit) tips.push("أضف رقماً واحداً على الأقل.");
+            if (!flags.hasSymbol) tips.push("أضف رمزاً خاصاً واحداً على الأقل (!@#$%...).");
+            if (flags.hasSequence) tips.push("تجنّب التسلسلات المتوقعة مثل 123 أو abc، ووزّع الأرقام والحروف بشكل عشوائي.");
+            if (flags.hasRepetition) tips.push("تجنّب تكرار نفس الحرف أو نفس المقطع عدة مرات متتالية.");
+            if (flags.hasKeyboardPattern) tips.push("تجنّب أنماط لوحة المفاتيح المتتالية مثل qwerty أو ضصثقف.");
+            if (tips.length === 0) tips.push("كلمة السر جيدة من الناحية الفنية — تذكّر أيضاً عدم إعادة استخدامها في أكثر من موقع، وفعّل التحقق بخطوتين (2FA) حيثما أمكن.");
+            return tips;
+        }
+
+        let pwAnalyzeTimer = null;
+        function analyzePasswordLive() {
+            clearTimeout(pwAnalyzeTimer);
+            pwAnalyzeTimer = setTimeout(runPasswordAnalysis, 100);
+        }
+
+        function runPasswordAnalysis() {
+            const password = document.getElementById('password-input').value;
+            const strengthBar = document.getElementById('pw-strength-bar');
+            const strengthLabel = document.getElementById('pw-strength-label');
+            const strengthPercentEl = document.getElementById('pw-strength-percent');
+            const entropyEl = document.getElementById('pw-entropy');
+            const criteriaList = document.getElementById('pw-criteria-list');
+            const issuesBox = document.getElementById('pw-issues-box');
+            const issuesList = document.getElementById('pw-issues-list');
+            const suggestionsBox = document.getElementById('pw-suggestions-box');
+            const suggestionsList = document.getElementById('pw-suggestions-list');
+
+            const hasLower = /[a-z]/.test(password);
+            const hasUpper = /[A-Z]/.test(password);
+            const hasDigit = /[0-9]/.test(password);
+            const hasSymbol = /[^a-zA-Z0-9\u0600-\u06FF]/.test(password);
+            const hasArabic = /[\u0600-\u06FF]/.test(password);
+            const isLongEnough = password.length >= 12;
+
+            const commonMatch = detectCommonWord(password);
+            const isCommon = !!commonMatch;
+            const hasSequential = detectSequence(password);
+            const hasRepeats = detectRepetition(password);
+            const hasKeyboardPattern = detectKeyboardPattern(password);
+
+            // حساب فراغ الاحتمالات (Pool Size) لتقدير الإنتروبيا بطريقة Shannon التقليدية
+            let poolSize = 0;
+            if (hasLower) poolSize += 26;
+            if (hasUpper) poolSize += 26;
+            if (hasDigit) poolSize += 10;
+            if (hasSymbol) poolSize += 32;
+            if (hasArabic) poolSize += 36;
+            if (poolSize === 0) poolSize = 1;
+
+            let entropyBits = password.length > 0 ? password.length * Math.log2(poolSize) : 0;
+
+            // خصومات على الإنتروبيا الفعلية عند وجود أنماط يسهل تخمينها (كما تفعل أدوات مثل zxcvbn تقريبياً)
+            if (isCommon) entropyBits = Math.min(entropyBits, 10);
+            if (hasKeyboardPattern) entropyBits -= 12;
+            if (hasSequential) entropyBits -= 8;
+            if (hasRepeats) entropyBits -= 8;
+            entropyBits = Math.max(entropyBits, password ? 1 : 0);
+
+            const criteria = [
+                { ok: password.length >= 8, label: "8 أحرف على الأقل" },
+                { ok: isLongEnough, label: "12 حرفاً أو أكثر (موصى به)" },
+                { ok: hasUpper, label: "تحتوي حرفاً كبيراً (A-Z)" },
+                { ok: hasLower, label: "تحتوي حرفاً صغيراً (a-z)" },
+                { ok: hasDigit, label: "تحتوي رقماً واحداً على الأقل" },
+                { ok: hasSymbol, label: "تحتوي رمزاً خاصاً (!@#$...)" },
+                { ok: !isCommon, label: "ليست من كلمات السر الشائعة" },
+                { ok: !hasSequential, label: "لا تحتوي تسلسلاً رقمياً/أبجدياً واضحاً" },
+                { ok: !hasRepeats, label: "لا تحتوي تكراراً واضحاً لحرف أو مقطع" },
+                { ok: !hasKeyboardPattern, label: "لا تحتوي نمط لوحة مفاتيح (qwerty، ضصثقف...)" }
+            ];
+
+            criteriaList.innerHTML = '';
+            criteria.forEach(c => {
+                const li = document.createElement('li');
+                li.className = `flex items-center gap-2 p-2 rounded-lg ${c.ok ? 'text-emerald-400 bg-emerald-950/20' : 'text-slate-500 bg-slate-950/40'}`;
+                li.innerHTML = `<i class="fa-solid ${c.ok ? 'fa-circle-check' : 'fa-circle-xmark'}"></i> ${c.label}`;
+                criteriaList.appendChild(li);
+            });
+
+            // المشاكل المحددة المكتشفة
+            const issues = [];
+            if (isCommon) issues.push(`تحتوي كلمة السر على كلمة شائعة معروفة${commonMatch ? ' ("' + commonMatch + '")' : ''} موجودة في قواعد بيانات كلمات المرور المسرَّبة.`);
+            if (hasSequential) issues.push("تحتوي على تسلسل متوقّع من الأرقام أو الحروف (مثل 123 أو abc).");
+            if (hasRepeats) issues.push("تحتوي على تكرار واضح لحرف واحد أو مقطع متكرر.");
+            if (hasKeyboardPattern) issues.push("تحتوي على نمط متتالٍ من لوحة المفاتيح (مثل qwerty أو ضصثقف).");
+            if (issues.length > 0 && password) {
+                issuesBox.classList.remove('hidden');
+                issuesList.innerHTML = issues.map(i => `<li class="flex items-start gap-2"><i class="fa-solid fa-circle-exclamation mt-0.5 shrink-0"></i><span>${i}</span></li>`).join('');
+            } else {
+                issuesBox.classList.add('hidden');
+            }
+
+            // الاقتراحات
+            if (password) {
+                const tips = generateSuggestions(password, { hasUpper, hasLower, hasDigit, hasSymbol, isCommon, hasSequential, hasRepeats, hasKeyboardPattern });
+                suggestionsBox.classList.remove('hidden');
+                suggestionsList.innerHTML = tips.map(t => `<li class="flex items-start gap-2"><i class="fa-solid fa-check mt-0.5 shrink-0"></i><span>${t}</span></li>`).join('');
+            } else {
+                suggestionsBox.classList.add('hidden');
+            }
+
+            if (!password) {
+                strengthBar.style.width = '0%';
+                strengthBar.style.background = '#475569';
+                strengthLabel.innerText = '-';
+                strengthLabel.className = 'text-xs font-black text-slate-500';
+                strengthPercentEl.innerText = '0%';
+                entropyEl.innerText = '0 bits';
+                document.getElementById('pw-crack-online').innerText = '-';
+                document.getElementById('pw-crack-offline-slow').innerText = '-';
+                document.getElementById('pw-crack-offline-fast').innerText = '-';
+                return;
+            }
+
+            // النتيجة النهائية تُبنى على الإنتروبيا الفعلية (بعد الخصومات) وليس فقط عدّ المعايير المستوفاة
+            let percent = Math.max(0, Math.min(100, Math.round((entropyBits / 90) * 100)));
+            if (isCommon) percent = Math.min(percent, 8);
+
+            let label, color;
+            if (percent <= 20) { label = 'ضعيفة جداً'; color = '#f43f5e'; }
+            else if (percent <= 40) { label = 'ضعيفة'; color = '#fb923c'; }
+            else if (percent <= 65) { label = 'متوسطة'; color = '#eab308'; }
+            else if (percent <= 85) { label = 'قوية'; color = '#22d3ee'; }
+            else { label = 'قوية جداً'; color = '#10b981'; }
+
+            strengthBar.style.width = percent + '%';
+            strengthBar.style.background = color;
+            strengthLabel.innerText = label;
+            strengthLabel.style.color = color;
+            strengthPercentEl.innerText = percent + '%';
+            entropyEl.innerText = Math.round(entropyBits) + ' bits';
+
+            document.getElementById('pw-crack-online').innerText = formatDuration(estimateSecondsFromEntropy(entropyBits, ATTACK_SCENARIOS.online));
+            document.getElementById('pw-crack-offline-slow').innerText = formatDuration(estimateSecondsFromEntropy(entropyBits, ATTACK_SCENARIOS.offlineSlow));
+            document.getElementById('pw-crack-offline-fast').innerText = formatDuration(estimateSecondsFromEntropy(entropyBits, ATTACK_SCENARIOS.offlineFast));
+        }
+
+        // ============================================================
+        //  مولّد كلمات سر قوية عشوائياً (Cryptographically Secure)
+        // ============================================================
+        const GEN_CHARSETS = {
+            upper: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            lower: "abcdefghijklmnopqrstuvwxyz",
+            digits: "0123456789",
+            symbols: "!@#$%^&*()-_=+[]{}?"
+        };
+        const AMBIGUOUS_CHARS = "0O1lI|";
+
+        function secureRandomInt(maxExclusive) {
+            const array = new Uint32Array(1);
+            const limit = Math.floor(0xFFFFFFFF / maxExclusive) * maxExclusive;
+            let x;
+            do { crypto.getRandomValues(array); x = array[0]; } while (x >= limit);
+            return x % maxExclusive;
+        }
+
+        function generateStrongPassword() {
+            const length = parseInt(document.getElementById('pw-gen-length').value, 10);
+            const useUpper = document.getElementById('pw-gen-upper').checked;
+            const useLower = document.getElementById('pw-gen-lower').checked;
+            const useDigits = document.getElementById('pw-gen-digits').checked;
+            const useSymbols = document.getElementById('pw-gen-symbols').checked;
+            const excludeAmbiguous = document.getElementById('pw-gen-exclude-ambiguous').checked;
+            const errorEl = document.getElementById('pw-gen-error');
+
+            const groups = [];
+            if (useUpper) groups.push(GEN_CHARSETS.upper);
+            if (useLower) groups.push(GEN_CHARSETS.lower);
+            if (useDigits) groups.push(GEN_CHARSETS.digits);
+            if (useSymbols) groups.push(GEN_CHARSETS.symbols);
+
+            if (groups.length === 0) {
+                errorEl.innerText = 'اختر نوعاً واحداً على الأقل من الأحرف قبل التوليد.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            errorEl.classList.add('hidden');
+
+            const clean = (s) => excludeAmbiguous ? s.split('').filter(c => !AMBIGUOUS_CHARS.includes(c)).join('') : s;
+            const cleanedGroups = groups.map(clean).filter(g => g.length > 0);
+            const fullPool = cleanedGroups.join('');
+
+            const resultChars = [];
+            // نضمن ظهور حرف واحد على الأقل من كل فئة مختارة لرفع الجودة الفعلية
+            cleanedGroups.forEach(g => resultChars.push(g[secureRandomInt(g.length)]));
+            while (resultChars.length < length) {
+                resultChars.push(fullPool[secureRandomInt(fullPool.length)]);
+            }
+            // خلط عشوائي آمن (Fisher-Yates) باستخدام crypto
+            for (let i = resultChars.length - 1; i > 0; i--) {
+                const j = secureRandomInt(i + 1);
+                [resultChars[i], resultChars[j]] = [resultChars[j], resultChars[i]];
+            }
+
+            const finalPassword = resultChars.slice(0, length).join('');
+            document.getElementById('pw-gen-output').value = finalPassword;
+        }
+
+        function copyGeneratedPassword() {
+            const output = document.getElementById('pw-gen-output');
+            const btn = document.getElementById('pw-gen-copy-btn');
+            if (!output.value) return;
+            navigator.clipboard.writeText(output.value).then(() => {
+                const original = btn.innerHTML;
+                btn.innerHTML = '<i class="fa-solid fa-check text-emerald-400"></i>';
+                setTimeout(() => { btn.innerHTML = original; }, 1200);
+            }).catch(() => {
+                output.select();
+                document.execCommand('copy');
+            });
+        }
+
         window.onload = function() {
             refreshStats();
             checkAuthState();
             resetSimulator();
+            // تحميل قاعدة كلمات السر الشائعة بعد رسم الصفحة مباشرة دون حجب التحميل الأولي
+            setTimeout(loadCommonPasswordsDB, 50);
         };
+
     </script>
 </body>
 </html>

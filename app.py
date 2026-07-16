@@ -13,7 +13,11 @@ import requests
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from typing import Optional
+from pydantic import BaseModel, Field
 from PIL import Image
 from PIL.ExifTags import TAGS
 # استيراد مكتبة التحقق من جوجل
@@ -22,17 +26,40 @@ from google.auth.transport import requests as google_requests
 
 app = FastAPI(title="منصة Smart Verify للتحقق الرقمي")
 
+# CORS: allow_credentials=True مع allow_origins=["*"] مزيج غير صالح فعلياً
+# (المتصفحات ترفضه) وغير آمن أساساً. الواجهة لا تعتمد على كوكيز/جلسات
+# (تسجيل الدخول يتم عبر Google ID Token يُرسل داخل جسم الطلب)، لذا لا حاجة
+# لـ allow_credentials. نُبقي allow_origins="*" لأن إضافة المتصفح (extension)
+# تستدعي الـ API من نطاق chrome-extension:// مختلف في كل تثبيت.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+# ضغط GZip لاستجابات الـ API والملفات الثابتة (يقلّص قاعدة كلمات السر
+# الشائعة من ~1.3MB إلى ~290KB تقريباً على الشبكة) لتحميل أسرع خصوصاً على الجوال
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """رؤوس أمان أساسية على كل استجابة (لا تغيّر أي سلوك وظيفي)."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
 
 # تحديد المسار بشكل متوافق تماماً مع البيئة السحابية لـ Vercel
 BASE_DIR = pathlib.Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+STATIC_DIR = BASE_DIR / "static"
+STATIC_DIR.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # معرف العميل الخاص بك الذي حصلت عليه من جوجل كلود
 GOOGLE_CLIENT_ID = "873065114114-g9a11ts2a0nj41pulqg8v25dfpo22dec.apps.googleusercontent.com"
@@ -79,9 +106,13 @@ stats = {
 }
 
 # ذاكرة مؤقتة لحفظ أكواد التحقق المرسلة عبر الواتساب
+# ملاحظة معمارية: هذه الذاكرة داخل العملية (in-process) فقط، وعلى بيئة
+# serverless مثل Vercel لا يوجد ضمان بأن نفس النسخة (instance) التي أرسلت
+# الكود هي من ستتحقق منه لاحقاً. للاستخدام الفعلي في الإنتاج يُفضّل تخزين
+# الأكواد في Firestore (متوفر أصلاً في المشروع) مع صلاحية زمنية (TTL).
 temp_whatsapp_codes = {}
-ULTRAMSG_INSTANCE_ID = "instanceXXXXX"
-ULTRAMSG_TOKEN = "your_token_here"
+ULTRAMSG_INSTANCE_ID = os.environ.get("ULTRAMSG_INSTANCE_ID", "")
+ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN", "")
 
 
 def save_scan_history(user_email: str, user_name: str, scan_type: str, subject: str, status: str, risk_score: int):
@@ -291,6 +322,73 @@ def check_virustotal_file_hash(file_bytes: bytes):
         return {"checked": False, "malicious": 0, "total_engines": 0, "known": False, "hash": file_hash, "error": str(e)}
 
 
+# ============================================================
+#  تحليل الصور بالذكاء الاصطناعي الخفيف (OCR) لرصد النصوص
+#  التحذيرية أو انتحال صفة الجهات الرسمية داخل الصور
+#  (فواتير، رسائل، لقطات شاشة مزيفة...)
+#
+#  يعتمد على خدمة OCR.space السحابية الخفيفة (لها باقة مجانية).
+#  اضبط متغير البيئة OCR_SPACE_API_KEY في Vercel لتفعيلها.
+# ============================================================
+OCR_SPACE_API_KEY = os.environ.get("OCR_SPACE_API_KEY", "")
+
+BRAND_IMPERSONATION_KEYWORDS = [
+    "بنك", "مصرف", "paypal", "visa", "mastercard", "بطاقة ائتمان", "stc pay",
+    "instapay", "vodafone cash", "instagram", "facebook", "whatsapp",
+    "apple id", "netflix", "أمازون", "amazon", "بريد السعودي", "ارامكس"
+]
+
+IMAGE_SCAM_TEXT_PATTERNS = {
+    r"تحديث بيانات|تحديث الحساب": "نص داخل الصورة يطلب تحديث بيانات حساسة، وهو أسلوب شائع في تصيّد الهوية.",
+    r"تم حظر|إيقاف الحساب|تعليق الحساب": "نص داخل الصورة يهدد بإيقاف أو حظر الحساب لدفع المستخدم للتصرف بذعر.",
+    r"رمز التحقق|كود التحقق|OTP": "نص داخل الصورة يطلب أو يعرض رمز تحقق، وقد يُستخدم كطعم لهندسة اجتماعية.",
+    r"فزت بـ|ربحت جائزة|مبروك": "نص داخل الصورة يستخدم أسلوب الجوائز الوهمية لإغراء الضحية.",
+    r"اضغط هنا|يرجى الضغط": "نص داخل الصورة يوجّه المستخدم لضغط رابط أو زر خارجي بشكل مباشر."
+}
+
+
+def extract_text_from_image(image_bytes: bytes):
+    """يستخرج أي نص موجود داخل الصورة عبر OCR سحابي خفيف."""
+    if not OCR_SPACE_API_KEY:
+        return {"checked": False, "text": "", "error": "لم يتم ضبط مفتاح OCR_SPACE_API_KEY"}
+    try:
+        resp = requests.post(
+            "https://api.ocr.space/parse/image",
+            files={"file": ("image.jpg", image_bytes)},
+            data={"apikey": OCR_SPACE_API_KEY, "language": "ara", "OCREngine": 2, "scale": True},
+            timeout=15
+        )
+        result = resp.json()
+        parsed = result.get("ParsedResults") or []
+        text = parsed[0].get("ParsedText", "") if parsed else ""
+        return {"checked": True, "text": text.strip(), "error": None}
+    except Exception as e:
+        return {"checked": False, "text": "", "error": str(e)}
+
+
+def analyze_image_text_content(ocr_text: str):
+    """يحلل النص المستخرج من الصورة لرصد لغة احتيالية أو انتحال صفة جهة رسمية معروفة."""
+    reasons = []
+    risk_add = 0
+    if not ocr_text:
+        return risk_add, reasons
+
+    text_lower = ocr_text.lower()
+    matched_brand = [b for b in BRAND_IMPERSONATION_KEYWORDS if b.lower() in text_lower]
+
+    for pattern, reason in IMAGE_SCAM_TEXT_PATTERNS.items():
+        if re.search(pattern, ocr_text):
+            risk_add += 25
+            reasons.append(reason)
+
+    if matched_brand and risk_add > 0:
+        risk_add += 20
+        brands_str = "، ".join(matched_brand[:3])
+        reasons.append(f"⚠️ تم رصد ذكر جهة معروفة ({brands_str}) داخل نص مشبوه بالصورة، وهو نمط شائع لانتحال الهوية البصرية للبنوك والمنصات.")
+
+    return risk_add, reasons
+
+
 def analyze_url(url: str):
     reasons = []
     risk_score = 0
@@ -422,6 +520,8 @@ def analyze_text(text: str):
 def analyze_image(image_bytes: bytes):
     reasons = []
     risk_score = 10
+    ocr_info = {"checked": False, "text": "", "error": None}
+
     try:
         with Image.open(io.BytesIO(image_bytes)) as img:
             info = img.getexif()
@@ -437,6 +537,20 @@ def analyze_image(image_bytes: bytes):
     except Exception as e:
         reasons.append(f"خطأ أثناء قراءة الصورة: {str(e)}")
         risk_score = 80
+
+    # --- تحليل الصورة بالذكاء الاصطناعي الخفيف (OCR): رصد نصوص تحذيرية أو انتحال جهات رسمية ---
+    ocr_info = extract_text_from_image(image_bytes)
+    if ocr_info["checked"] and ocr_info["text"]:
+        text_risk_add, text_reasons = analyze_image_text_content(ocr_info["text"])
+        risk_score += text_risk_add
+        reasons.extend(text_reasons)
+
+    # --- مطابقة بصمة الملف مع قاعدة بيانات VirusTotal ---
+    vt_file_result = check_virustotal_file_hash(image_bytes)
+    if vt_file_result["checked"] and vt_file_result.get("known") and vt_file_result["malicious"] > 0:
+        risk_score = max(risk_score, min(100, 50 + vt_file_result["malicious"] * 5))
+        reasons.insert(0, f"🚨 رصد {vt_file_result['malicious']} من أصل {vt_file_result['total_engines']} محرك أمني عبر VirusTotal أن هذا الملف ضار.")
+
     risk_score = min(risk_score, 100)
     status = "معدلة/مشبوهة" if risk_score >= 50 else "سليمة"
     stats["total_scans"] += 1
@@ -445,7 +559,15 @@ def analyze_image(image_bytes: bytes):
         stats["manipulated_images"] += 1
     else:
         stats["safe_count"] += 1
-    return {"status": status, "risk_score": risk_score, "reasons": reasons}
+
+    return {
+        "status": status,
+        "risk_score": risk_score,
+        "reasons": reasons,
+        "ocr_text_detected": bool(ocr_info.get("text")),
+        "extracted_text_snippet": (ocr_info.get("text", "")[:200] if ocr_info.get("text") else ""),
+        "external_sources": {"virustotal_file": vt_file_result}
+    }
 
 
 # ============================================================
@@ -512,6 +634,35 @@ def check_emergency(message: str):
     return None
 
 
+class URLScanRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2048)
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
+
+
+class TextScanRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=5000)
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(default="", max_length=1000)
+
+
+class GoogleAuthRequest(BaseModel):
+    credential: str = Field(..., min_length=1)
+
+
+class WhatsAppSendRequest(BaseModel):
+    phone: str = Field(..., min_length=5, max_length=20)
+
+
+class WhatsAppVerifyRequest(BaseModel):
+    phone: str = Field(..., min_length=5, max_length=20)
+    code: str = Field(..., min_length=1, max_length=10)
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     try:
@@ -544,20 +695,18 @@ def api_get_history(email: str = ""):
 
 
 @app.post("/api/scan-url")
-def api_scan_url(data: dict):
-    result = analyze_url(data["url"])
-    user_email = data.get("user_email")
-    if user_email:
-        save_scan_history(user_email, data.get("user_name", ""), "رابط (URL)", result.get("original_url", data["url"]), result["status"], result["risk_score"])
+def api_scan_url(data: URLScanRequest):
+    result = analyze_url(data.url)
+    if data.user_email:
+        save_scan_history(data.user_email, data.user_name or "", "رابط (URL)", result.get("original_url", data.url), result["status"], result["risk_score"])
     return result
 
 
 @app.post("/api/scan-text")
-def api_scan_text(data: dict):
-    result = analyze_text(data["text"])
-    user_email = data.get("user_email")
-    if user_email:
-        save_scan_history(user_email, data.get("user_name", ""), "رسالة نصية", data["text"], result["status"], result["risk_score"])
+def api_scan_text(data: TextScanRequest):
+    result = analyze_text(data.text)
+    if data.user_email:
+        save_scan_history(data.user_email, data.user_name or "", "رسالة نصية", data.text, result["status"], result["risk_score"])
     return result
 
 
@@ -573,8 +722,8 @@ async def api_scan_image(file: UploadFile = File(...), user_email: str = Form(No
 
 
 @app.post("/api/chat")
-def api_chat(data: dict):
-    message = data.get("message", "").strip()
+def api_chat(data: ChatRequest):
+    message = data.message.strip()
     message_lower = message.lower()
 
     # --- الأولوية القصوى: سيناريوهات الطوارئ ---
@@ -606,10 +755,8 @@ def api_chat(data: dict):
 
 # مسار استقبال وتحليل رمز التوثيق المرسل من جوجل (ID Token)
 @app.post("/api/auth/google")
-def google_auth(data: dict):
-    token = data.get("credential")
-    if not token:
-        raise HTTPException(status_code=400, detail="مفتاح تسجيل الدخول مفقود")
+def google_auth(data: GoogleAuthRequest):
+    token = data.credential
     try:
         # التحقق من صحة التوكن مباشرة مع خوادم جوجل لمنع التلاعب
         idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
@@ -634,13 +781,15 @@ def google_auth(data: dict):
 
 # مسار إرسال كود التحقق OTP إلى واتساب المستخدم
 @app.post("/api/auth/whatsapp/send")
-def send_whatsapp_otp(data: dict):
-    phone = data.get("phone")
-    if not phone:
-        raise HTTPException(status_code=400, detail="الرجاء إدخال رقم الهاتف")
+def send_whatsapp_otp(data: WhatsAppSendRequest):
+    phone = data.phone
 
     otp_code = str(random.randint(100000, 999999))
     temp_whatsapp_codes[phone] = otp_code
+
+    if not ULTRAMSG_INSTANCE_ID or not ULTRAMSG_TOKEN:
+        # لم يتم ضبط بيانات UltraMsg بعد كمتغيرات بيئة -> وضع محاكاة محلي فوري
+        return {"success": True, "fallback": True, "code": otp_code, "message": "تم تشغيل وضع المحاكاة المحلي (لم يتم ضبط UltraMsg بعد)."}
 
     message_text = f"🛡️ [Smart Verify]\n\nكود التحقق الخاص بك هو: *{otp_code}*\n\nيرجى إدخاله لتأكيد تسجيل الدخول."
 
@@ -666,9 +815,9 @@ def send_whatsapp_otp(data: dict):
 
 # مسار التحقق من الكود المدخل لواتساب
 @app.post("/api/auth/whatsapp/verify")
-def verify_whatsapp_otp(data: dict):
-    phone = data.get("phone")
-    code = data.get("code")
+def verify_whatsapp_otp(data: WhatsAppVerifyRequest):
+    phone = data.phone
+    code = data.code
 
     if phone in temp_whatsapp_codes and temp_whatsapp_codes[phone] == code:
         del temp_whatsapp_codes[phone]
