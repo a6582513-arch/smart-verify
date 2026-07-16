@@ -3,10 +3,14 @@ import re
 import ssl
 import socket
 import io
+import json
 import random
 import pathlib
+import base64
+import hashlib
+import datetime
 import requests
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
@@ -33,6 +37,42 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 # معرف العميل الخاص بك الذي حصلت عليه من جوجل كلود
 GOOGLE_CLIENT_ID = "873065114114-g9a11ts2a0nj41pulqg8v25dfpo22dec.apps.googleusercontent.com"
 
+# ============================================================
+#  مفاتيح مصادر التهديد الحية الخارجية (يجب ضبطها كمتغيرات بيئة
+#  في لوحة تحكم Vercel: Settings > Environment Variables)
+#  - VIRUSTOTAL_API_KEY: احصل عليه مجاناً من virustotal.com/gui/join-us
+#  - GOOGLE_SAFE_BROWSING_API_KEY: من Google Cloud Console (فعّل Safe Browsing API)
+# ============================================================
+VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "")
+GOOGLE_SAFE_BROWSING_API_KEY = os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY", "")
+
+# ============================================================
+#  إعداد Firebase (Firestore) لتخزين "سجل التحقق" الخاص بكل مستخدم
+#  مرتبطاً بحساب Google الذي سجّل به الدخول.
+#
+#  خطوات التفعيل:
+#  1) أنشئ مشروع Firebase مجاني وفعّل خدمة Firestore Database.
+#  2) من Project Settings > Service Accounts، ولّد مفتاح خدمة جديد (JSON).
+#  3) انسخ محتوى ملف الـ JSON بالكامل وضعه كمتغير بيئة باسم
+#     FIREBASE_SERVICE_ACCOUNT_JSON في إعدادات Vercel.
+#  دون ضبط هذا المتغير، تعمل المنصة بشكل طبيعي لكن دون حفظ سجل تحقق دائم.
+# ============================================================
+firebase_db = None
+try:
+    firebase_creds_raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+    if firebase_creds_raw:
+        import firebase_admin
+        from firebase_admin import credentials, firestore
+
+        cred_dict = json.loads(firebase_creds_raw)
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+        firebase_db = firestore.client()
+except Exception as _firebase_init_error:
+    # في حال فشل الإعداد (مفتاح غير صالح مثلاً)، نستمر بدون سجل تحقق دائم
+    firebase_db = None
+
 stats = {
     "total_scans": 0, "safe_count": 0, "danger_count": 0,
     "phishing_urls": 0, "scam_texts": 0, "manipulated_images": 0
@@ -42,6 +82,55 @@ stats = {
 temp_whatsapp_codes = {}
 ULTRAMSG_INSTANCE_ID = "instanceXXXXX"
 ULTRAMSG_TOKEN = "your_token_here"
+
+
+def save_scan_history(user_email: str, user_name: str, scan_type: str, subject: str, status: str, risk_score: int):
+    """يحفظ نتيجة الفحص في سجل التحقق الخاص بالمستخدم على Firestore، إن كانت الخدمة مُفعّلة."""
+    if not firebase_db or not user_email:
+        return False
+    try:
+        from firebase_admin import firestore
+        firebase_db.collection("scan_history").add({
+            "user_email": user_email,
+            "user_name": user_name or "",
+            "scan_type": scan_type,
+            "subject": subject[:300] if subject else "",
+            "status": status,
+            "risk_score": risk_score,
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+        return True
+    except Exception:
+        return False
+
+
+def get_scan_history(user_email: str, limit: int = 50):
+    """يجلب آخر عمليات الفحص الخاصة بمستخدم معيّن من Firestore، مرتبة من الأحدث للأقدم."""
+    if not firebase_db or not user_email:
+        return []
+    try:
+        from firebase_admin import firestore
+        query = (
+            firebase_db.collection("scan_history")
+            .where("user_email", "==", user_email)
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+        )
+        records = []
+        for doc in query.stream():
+            d = doc.to_dict()
+            created_at = d.get("created_at")
+            records.append({
+                "scan_type": d.get("scan_type", ""),
+                "subject": d.get("subject", ""),
+                "status": d.get("status", ""),
+                "risk_score": d.get("risk_score", 0),
+                "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
+            })
+        return records
+    except Exception:
+        return []
+
 
 # ============================================================
 #  قوائم الروابط المختصرة والنطاقات الاحتيالية المعروفة محلياً
@@ -114,6 +203,94 @@ def get_domain(url: str) -> str:
     return url.split("//")[-1].split("/")[0].split(":")[0].lower()
 
 
+# ============================================================
+#  التحقق من مصادر التهديد الحية الخارجية (نفس فلسفة VirusTotal:
+#  تجميع أحكام عدة مصادر موثوقة بدل الاعتماد على قواعد محلية فقط)
+# ============================================================
+
+def check_google_safe_browsing(url: str):
+    """
+    يتحقق من الرابط عبر قاعدة بيانات Google Safe Browsing الحية،
+    وهي نفس القاعدة التي تعتمد عليها متصفحات Chrome و Firefox لحماية المستخدمين.
+    """
+    if not GOOGLE_SAFE_BROWSING_API_KEY:
+        return {"checked": False, "malicious": False, "threats": [], "error": "لم يتم ضبط مفتاح Google Safe Browsing API"}
+    try:
+        endpoint = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GOOGLE_SAFE_BROWSING_API_KEY}"
+        payload = {
+            "client": {"clientId": "smart-verify", "clientVersion": "2.1"},
+            "threatInfo": {
+                "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
+                "platformTypes": ["ANY_PLATFORM"],
+                "threatEntryTypes": ["URL"],
+                "threatEntries": [{"url": url}]
+            }
+        }
+        resp = requests.post(endpoint, json=payload, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        matches = data.get("matches", [])
+        threats = sorted({m.get("threatType", "UNKNOWN") for m in matches})
+        return {"checked": True, "malicious": len(matches) > 0, "threats": threats, "error": None}
+    except Exception as e:
+        return {"checked": False, "malicious": False, "threats": [], "error": str(e)}
+
+
+def check_virustotal_url(url: str):
+    """
+    يستعلم من قاعدة بيانات VirusTotal (أكثر من 70 محرك مضاد فيروسات وقوائم حجب)
+    عن سجل الرابط، وإن لم يكن موجوداً يرسله للفحص لأول مرة.
+    """
+    if not VIRUSTOTAL_API_KEY:
+        return {"checked": False, "malicious": 0, "suspicious": 0, "total_engines": 0, "pending": False, "error": "لم يتم ضبط مفتاح VirusTotal API"}
+    try:
+        headers = {"x-apikey": VIRUSTOTAL_API_KEY}
+        url_id = base64.urlsafe_b64encode(url.encode()).decode().strip("=")
+        resp = requests.get(f"https://www.virustotal.com/api/v3/urls/{url_id}", headers=headers, timeout=6)
+
+        if resp.status_code == 404:
+            # الرابط غير موجود مسبقاً في قاعدة البيانات، نرسله لأول فحص
+            requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data={"url": url}, timeout=6)
+            return {"checked": True, "malicious": 0, "suspicious": 0, "total_engines": 0, "pending": True, "error": None}
+
+        resp.raise_for_status()
+        stats_data = resp.json()["data"]["attributes"]["last_analysis_stats"]
+        return {
+            "checked": True,
+            "malicious": stats_data.get("malicious", 0),
+            "suspicious": stats_data.get("suspicious", 0),
+            "total_engines": sum(stats_data.values()),
+            "pending": False,
+            "error": None
+        }
+    except Exception as e:
+        return {"checked": False, "malicious": 0, "suspicious": 0, "total_engines": 0, "pending": False, "error": str(e)}
+
+
+def check_virustotal_file_hash(file_bytes: bytes):
+    """يحسب بصمة SHA-256 للملف ويبحث عنها في قاعدة بيانات VirusTotal دون الحاجة لرفع الملف فعلياً."""
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    if not VIRUSTOTAL_API_KEY:
+        return {"checked": False, "malicious": 0, "total_engines": 0, "known": False, "hash": file_hash, "error": "لم يتم ضبط مفتاح VirusTotal API"}
+    try:
+        headers = {"x-apikey": VIRUSTOTAL_API_KEY}
+        resp = requests.get(f"https://www.virustotal.com/api/v3/files/{file_hash}", headers=headers, timeout=6)
+        if resp.status_code == 404:
+            return {"checked": True, "malicious": 0, "total_engines": 0, "known": False, "hash": file_hash, "error": None}
+        resp.raise_for_status()
+        stats_data = resp.json()["data"]["attributes"]["last_analysis_stats"]
+        return {
+            "checked": True,
+            "malicious": stats_data.get("malicious", 0),
+            "total_engines": sum(stats_data.values()),
+            "known": True,
+            "hash": file_hash,
+            "error": None
+        }
+    except Exception as e:
+        return {"checked": False, "malicious": 0, "total_engines": 0, "known": False, "hash": file_hash, "error": str(e)}
+
+
 def analyze_url(url: str):
     reasons = []
     risk_score = 0
@@ -173,6 +350,26 @@ def analyze_url(url: str):
         risk_score += 15
         reasons.append("فشل التحقق من شهادة الأمان SSL للنطاق أو أن الموقع غير متصل بالإنترنت حالياً.")
 
+    # --- 5) مصادر التهديد الحية الخارجية: Google Safe Browsing + VirusTotal ---
+    gsb_result = check_google_safe_browsing(url)
+    vt_result = check_virustotal_url(url)
+
+    if gsb_result["checked"] and gsb_result["malicious"]:
+        risk_score = 100
+        threat_labels = ", ".join(gsb_result["threats"])
+        reasons.insert(0, f"🚨 تحذير مباشر من Google Safe Browsing (نفس قاعدة بيانات Chrome): هذا الرابط مصنّف كتهديد فعلي ({threat_labels}).")
+
+    if vt_result["checked"] and vt_result.get("total_engines", 0) > 0:
+        vt_mal = vt_result["malicious"]
+        vt_total = vt_result["total_engines"]
+        if vt_mal > 0:
+            risk_score = max(risk_score, min(100, 50 + vt_mal * 5))
+            reasons.insert(0, f"🚨 رصد {vt_mal} من أصل {vt_total} محرك أمني عبر VirusTotal هذا الرابط كضار أو مشبوه.")
+        else:
+            reasons.append(f"✅ لم يرصد أي من {vt_total} محرك أمني عبر VirusTotal أي تهديد على هذا الرابط.")
+    elif vt_result["checked"] and vt_result.get("pending"):
+        reasons.append("ℹ️ الرابط جديد على قاعدة بيانات VirusTotal وتم إرساله للفحص لأول مرة.")
+
     risk_score = min(risk_score, 100)
     status = "خطر" if risk_score >= 50 else "آمن مبدئياً"
     stats["total_scans"] += 1
@@ -189,7 +386,11 @@ def analyze_url(url: str):
         "redirect_chain": expansion_info["redirect_chain"],
         "status": status,
         "risk_score": risk_score,
-        "reasons": reasons if reasons else ["لا توجد مؤشرات خطر واضحة."]
+        "reasons": reasons if reasons else ["لا توجد مؤشرات خطر واضحة."],
+        "external_sources": {
+            "google_safe_browsing": gsb_result,
+            "virustotal": vt_result
+        }
     }
 
 
@@ -319,27 +520,56 @@ def home(request: Request):
         return HTMLResponse(content=f"<h3>خطأ في العثور على index.html داخل مجلد templates</h3>", status_code=500)
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request):
+    try:
+        return templates.TemplateResponse(request=request, name="dashboard.html")
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>خطأ في العثور على dashboard.html داخل مجلد templates</h3>", status_code=500)
+
+
 @app.get("/api/stats")
 def get_stats():
     return stats
 
 
+@app.get("/api/history")
+def api_get_history(email: str = ""):
+    if not email:
+        raise HTTPException(status_code=400, detail="الرجاء تمرير البريد الإلكتروني")
+    if not firebase_db:
+        return {"enabled": False, "records": [], "message": "سجل التحقق غير مفعّل حالياً على الخادم (لم يتم ضبط Firebase)."}
+    records = get_scan_history(email)
+    return {"enabled": True, "records": records}
+
+
 @app.post("/api/scan-url")
 def api_scan_url(data: dict):
-    return analyze_url(data["url"])
+    result = analyze_url(data["url"])
+    user_email = data.get("user_email")
+    if user_email:
+        save_scan_history(user_email, data.get("user_name", ""), "رابط (URL)", result.get("original_url", data["url"]), result["status"], result["risk_score"])
+    return result
 
 
 @app.post("/api/scan-text")
 def api_scan_text(data: dict):
-    return analyze_text(data["text"])
+    result = analyze_text(data["text"])
+    user_email = data.get("user_email")
+    if user_email:
+        save_scan_history(user_email, data.get("user_name", ""), "رسالة نصية", data["text"], result["status"], result["risk_score"])
+    return result
 
 
 @app.post("/api/scan-image")
-async def api_scan_image(file: UploadFile = File(...)):
+async def api_scan_image(file: UploadFile = File(...), user_email: str = Form(None), user_name: str = Form(None)):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="الملف يجب أن يكون صورة")
     file_bytes = await file.read()
-    return analyze_image(file_bytes)
+    result = analyze_image(file_bytes)
+    if user_email:
+        save_scan_history(user_email, user_name or "", "صورة", file.filename or "صورة مرفوعة", result["status"], result["risk_score"])
+    return result
 
 
 @app.post("/api/chat")
