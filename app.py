@@ -664,6 +664,16 @@ class WhatsAppVerifyRequest(BaseModel):
 
 
 @app.get("/", response_class=HTMLResponse)
+def intro(request: Request):
+    """مقدمة سينمائية (شعار Smart Verify) تُعرض عند دخول الموقع لأول مرة،
+    ثم تنتقل تلقائياً إلى الصفحة الرئيسية على /home."""
+    try:
+        return templates.TemplateResponse(request=request, name="intro.html")
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>خطأ في العثور على intro.html داخل مجلد templates</h3>", status_code=500)
+
+
+@app.get("/home", response_class=HTMLResponse)
 def home(request: Request):
     try:
         return templates.TemplateResponse(request=request, name="index.html")
