@@ -6,3 +6,5 @@ uvicorn
 requests
 google-auth
 firebase-admin
+python-whois
+slowapi

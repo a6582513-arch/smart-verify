@@ -497,6 +497,14 @@
                         </div>
                         <div class="text-slate-300 text-sm font-semibold">تفاصيل الكشف:</div>
                         <ul id="res-reasons" class="list-none text-sm text-slate-400 space-y-2"></ul>
+
+                        <!-- الإبلاغ المجتمعي عن رابط احتيالي -->
+                        <div id="report-domain-box" class="hidden pt-2">
+                            <button onclick="reportCurrentDomain()" id="report-domain-btn" class="bg-rose-950/30 border border-rose-500/30 hover:border-rose-400 text-rose-300 px-4 py-2 rounded-xl text-xs font-bold transition duration-300 flex items-center gap-2">
+                                <i class="fa-solid fa-flag"></i> أبلغ عن هذا الرابط كاحتيال
+                            </button>
+                            <p id="report-domain-feedback" class="text-[11px] text-slate-500 mt-2"></p>
+                        </div>
                     </div>
                     <div class="text-center bg-slate-950 border p-6 rounded-2xl shrink-0 min-w-[170px] relative overflow-hidden group">
                         <span class="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">نسبة التهديد</span>
@@ -593,6 +601,7 @@
 
         // يحفظ آخر نتيجة فحص لاستخدامها عند توليد التقرير القابل للتحميل
         let lastScanReport = null;
+        let lastScannedUrlForReport = null;
 
         function displayResults(status, riskScore, reasons, meta) {
             meta = meta || {};
@@ -603,6 +612,9 @@
             const resultCard = document.getElementById('result-card');
             const chainBox = document.getElementById('redirect-chain-box');
             const chainList = document.getElementById('redirect-chain-list');
+            const reportBox = document.getElementById('report-domain-box');
+            const reportFeedback = document.getElementById('report-domain-feedback');
+            const reportBtn = document.getElementById('report-domain-btn');
 
             resultBox.classList.remove('hidden');
             resStatus.innerText = status;
@@ -615,6 +627,18 @@
                 li.innerHTML = `<span class="text-cyan-500 mt-1">✦</span> <span>${r}</span>`;
                 resReasons.appendChild(li);
             });
+
+            // زر الإبلاغ المجتمعي يظهر فقط لفحوصات الروابط
+            if (meta.reportUrl) {
+                lastScannedUrlForReport = meta.reportUrl;
+                reportBox.classList.remove('hidden');
+                reportFeedback.innerText = '';
+                reportBtn.disabled = false;
+                reportBtn.classList.remove('opacity-50');
+            } else {
+                reportBox.classList.add('hidden');
+                lastScannedUrlForReport = null;
+            }
 
             // عرض سلسلة إعادة التوجيه إذا كان الرابط مختصراً وتم فك تشفيره
             if (meta.redirect_chain && meta.redirect_chain.length > 1) {
@@ -654,6 +678,39 @@
 
             refreshStats();
             resultBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // ===== الإبلاغ المجتمعي عن نطاق احتيالي =====
+        async function reportCurrentDomain() {
+            if (!lastScannedUrlForReport) return;
+            const btn = document.getElementById('report-domain-btn');
+            const feedback = document.getElementById('report-domain-feedback');
+            const gUser = getCurrentGoogleUser();
+
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            feedback.innerText = 'جاري إرسال البلاغ...';
+
+            try {
+                const res = await fetch('/api/report-domain', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        url: lastScannedUrlForReport,
+                        user_email: gUser ? gUser.email : null
+                    })
+                });
+                const data = await res.json();
+                feedback.innerText = data.message || 'تم إرسال البلاغ.';
+                if (!data.success) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50');
+                }
+            } catch (e) {
+                feedback.innerText = 'تعذّر إرسال البلاغ، حاول مرة أخرى لاحقاً.';
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+            }
         }
 
         // ===== توليد بصمة تحقق (SHA-256) لحماية التقرير من التلاعب =====
@@ -775,10 +832,17 @@
                 });
                 const data = await res.json();
                 stopScanOverlay();
+
+                if (data.status === 'غير صالح') {
+                    alert(data.reasons && data.reasons[0] ? data.reasons[0] : "المُدخل ليس رابطاً صالحاً.");
+                    return;
+                }
+
                 displayResults(data.status, data.risk_score, data.reasons, {
                     scanType: 'فحص رابط (URL)',
                     subject: data.original_url || urlInput,
-                    redirect_chain: data.was_expanded ? data.redirect_chain : null
+                    redirect_chain: data.was_expanded ? data.redirect_chain : null,
+                    reportUrl: data.url || urlInput
                 });
             } catch(e) { stopScanOverlay(); alert("فشل الاتصال بخادم المعالجة الأساسي"); }
         }
@@ -915,7 +979,9 @@
                 if(data.success) {
                     alert(data.message);
                     document.getElementById('wa-code-area').classList.remove('hidden');
-                    if(data.fallback) {
+                    if(data.fallback && data.code) {
+                        // الكود يظهر فقط في وضع التطوير المحلي (DEV_MODE) على الخادم؛
+                        // بالإنتاج data.code لا يُرسل أصلاً حفاظاً على الأمان، فتُخفى هذه الرسالة.
                         document.getElementById('fallback-notification').style.display = 'block';
                         document.getElementById('fallback-code').innerText = data.code;
                     } else {

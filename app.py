@@ -23,8 +23,20 @@ from PIL.ExifTags import TAGS
 # استيراد مكتبة التحقق من جوجل
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 app = FastAPI(title="منصة Smart Verify للتحقق الرقمي")
+
+# ============================================================
+#  Rate Limiting: بدون هذا، أي طرف يقدر يستنزف حصة VirusTotal/Google
+#  Safe Browsing اليومية المجانية بسكريبت بسيط يضرب endpoint الفحص
+#  آلاف المرات بالدقيقة. الحد هنا لكل عنوان IP.
+# ============================================================
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS: allow_credentials=True مع allow_origins=["*"] مزيج غير صالح فعلياً
 # (المتصفحات ترفضه) وغير آمن أساساً. الواجهة لا تعتمد على كوكيز/جلسات
@@ -105,14 +117,96 @@ stats = {
     "phishing_urls": 0, "scam_texts": 0, "manipulated_images": 0
 }
 
-# ذاكرة مؤقتة لحفظ أكواد التحقق المرسلة عبر الواتساب
-# ملاحظة معمارية: هذه الذاكرة داخل العملية (in-process) فقط، وعلى بيئة
-# serverless مثل Vercel لا يوجد ضمان بأن نفس النسخة (instance) التي أرسلت
-# الكود هي من ستتحقق منه لاحقاً. للاستخدام الفعلي في الإنتاج يُفضّل تخزين
-# الأكواد في Firestore (متوفر أصلاً في المشروع) مع صلاحية زمنية (TTL).
+# وضع التطوير المحلي فقط: يتحكم بسلوكيات لا يجب أن تعمل أبداً بالإنتاج
+# (مثل إرجاع كود OTP بالاستجابة). لا تفعّله أبداً على Vercel/الإنتاج.
+DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
+
+# ذاكرة مؤقتة لحفظ أكواد التحقق المرسلة عبر الواتساب (تُستخدم فقط كخطة
+# بديلة إن لم يكن Firestore مفعّلاً). كل قيمة هي (code, created_at) للتحقق
+# من انتهاء صلاحية الكود (TTL) وليس فقط تطابقه.
 temp_whatsapp_codes = {}
+OTP_TTL_SECONDS = 5 * 60  # صلاحية كود OTP: 5 دقائق
 ULTRAMSG_INSTANCE_ID = os.environ.get("ULTRAMSG_INSTANCE_ID", "")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN", "")
+
+# ============================================================
+#  كاش نتائج فحص الروابط (Google Safe Browsing + VirusTotal)
+#  الهدف: تفادي إعادة استهلاك حصة VirusTotal المجانية (500 طلب/يوم) عند
+#  فحص نفس الرابط أكثر من مرة خلال 24 ساعة. يُخزَّن بـ Firestore إن كان
+#  مفعّلاً (يبقى بين عمليات إعادة التشغيل)، وإلا بذاكرة محلية مؤقتة كخطة
+#  بديلة (تكفي لتقليل التكرار أثناء نفس الجلسة الحيّة على الخادم).
+# ============================================================
+SCAN_CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 ساعة
+_local_scan_cache = {}
+
+
+def _cache_key(prefix: str, value: str) -> str:
+    return f"{prefix}:{hashlib.sha256(value.encode()).hexdigest()}"
+
+
+def cache_get(key: str, ttl_seconds: int = SCAN_CACHE_TTL_SECONDS):
+    """يجلب قيمة من الكاش (Firestore أو الذاكرة المحلية) إن كانت ما زالت ضمن مدة صلاحيتها."""
+    now = datetime.datetime.utcnow()
+    if firebase_db:
+        try:
+            doc = firebase_db.collection("scan_cache").document(key).get()
+            if doc.exists:
+                data = doc.to_dict()
+                cached_at = data.get("cached_at")
+                if cached_at is not None:
+                    cached_at = cached_at.replace(tzinfo=None) if hasattr(cached_at, "replace") else cached_at
+                    if (now - cached_at).total_seconds() < ttl_seconds:
+                        return data.get("value")
+            return None
+        except Exception:
+            pass  # نتابع بدون كاش عند أي خلل بالاتصال بـ Firestore
+    entry = _local_scan_cache.get(key)
+    if entry and (now - entry[0]).total_seconds() < ttl_seconds:
+        return entry[1]
+    return None
+
+
+def cache_set(key: str, value: dict):
+    """يخزّن قيمة بالكاش (Firestore إن مفعّلاً، وإلا بالذاكرة المحلية)."""
+    now = datetime.datetime.utcnow()
+    if firebase_db:
+        try:
+            from firebase_admin import firestore
+            firebase_db.collection("scan_cache").document(key).set({
+                "value": value, "cached_at": firestore.SERVER_TIMESTAMP
+            })
+            return
+        except Exception:
+            pass
+    _local_scan_cache[key] = (now, value)
+
+
+def increment_stats(fields: dict):
+    """يحدّث الإحصائيات بالذاكرة المحلية (للاستجابة الفورية) وبـ Firestore
+    (كمصدر دائم لا يتصفّر مع cold start) في آن واحد، إن كان Firestore مفعّلاً."""
+    for k, v in fields.items():
+        stats[k] = stats.get(k, 0) + v
+    if firebase_db:
+        try:
+            from firebase_admin import firestore
+            updates = {k: firestore.Increment(v) for k, v in fields.items()}
+            firebase_db.collection("meta").document("stats").set(updates, merge=True)
+        except Exception:
+            pass
+
+
+def load_persisted_stats():
+    """يجلب الإحصائيات الدائمة من Firestore إن كانت متوفرة، مع تعبئة أي حقل ناقص بصفر."""
+    if not firebase_db:
+        return dict(stats)
+    try:
+        doc = firebase_db.collection("meta").document("stats").get()
+        merged = dict(stats)  # يضمن وجود كل المفاتيح الافتراضية حتى لو لم تُحفظ بعد
+        if doc.exists:
+            merged.update(doc.to_dict())
+        return merged
+    except Exception:
+        return dict(stats)
 
 
 def save_scan_history(user_email: str, user_name: str, scan_type: str, subject: str, status: str, risk_score: int):
@@ -164,8 +258,72 @@ def get_scan_history(user_email: str, limit: int = 50):
 
 
 # ============================================================
-#  قوائم الروابط المختصرة والنطاقات الاحتيالية المعروفة محلياً
+#  القائمة السوداء المجتمعية (Crowdsourced Blacklist)
+#  يبلّغ المستخدمون عن نطاقات احتيالية، وبعد وصول عدد التبليغات
+#  المستقلة لعتبة معيّنة، يُعامَل النطاق كخطر مؤكَّد في الفحوصات
+#  اللاحقة — طبقة استخبارات محلية تنمو بمرور الوقت (تحتاج Firestore).
 # ============================================================
+COMMUNITY_REPORT_THRESHOLD = 3
+
+
+def check_community_blacklist(domain: str):
+    """يتحقق إن كان النطاق قد بلّغ عنه عدد كافٍ من المستخدمين المستقلين."""
+    if not firebase_db or not domain:
+        return {"checked": False, "report_count": 0, "flagged": False}
+    try:
+        doc = firebase_db.collection("community_reports").document(domain).get()
+        if not doc.exists:
+            return {"checked": True, "report_count": 0, "flagged": False}
+        data = doc.to_dict()
+        count = data.get("report_count", 0)
+        return {"checked": True, "report_count": count, "flagged": count >= COMMUNITY_REPORT_THRESHOLD}
+    except Exception:
+        return {"checked": False, "report_count": 0, "flagged": False}
+
+
+def report_domain_to_community(domain: str, reporter_email: str = ""):
+    """يسجّل تبليغاً جديداً عن نطاق مشبوه من مستخدم، ويحدّث عدّاد التبليغات المستقلة."""
+    if not firebase_db or not domain:
+        return {"success": False, "report_count": 0, "flagged": False, "message": "ميزة التبليغ المجتمعي غير مفعّلة حالياً على الخادم (Firebase غير مضبوط)."}
+    try:
+        from firebase_admin import firestore
+        doc_ref = firebase_db.collection("community_reports").document(domain)
+        doc = doc_ref.get()
+
+        if doc.exists and reporter_email:
+            existing_reporters = doc.to_dict().get("reporter_emails", [])
+            if reporter_email in existing_reporters:
+                return {
+                    "success": True, "already_reported": True,
+                    "report_count": doc.to_dict().get("report_count", 0),
+                    "flagged": doc.to_dict().get("report_count", 0) >= COMMUNITY_REPORT_THRESHOLD,
+                    "message": "لقد قمت بالإبلاغ عن هذا النطاق مسبقاً."
+                }
+
+        update_data = {
+            "domain": domain,
+            "report_count": firestore.Increment(1),
+            "last_reported_at": firestore.SERVER_TIMESTAMP,
+        }
+        if not doc.exists:
+            update_data["first_reported_at"] = firestore.SERVER_TIMESTAMP
+        if reporter_email:
+            update_data["reporter_emails"] = firestore.ArrayUnion([reporter_email])
+
+        doc_ref.set(update_data, merge=True)
+
+        new_count = (doc.to_dict().get("report_count", 0) if doc.exists else 0) + 1
+        return {
+            "success": True, "already_reported": False,
+            "report_count": new_count,
+            "flagged": new_count >= COMMUNITY_REPORT_THRESHOLD,
+            "message": "تم استلام بلاغك، شكراً لمساهمتك في حماية بقية المستخدمين."
+        }
+    except Exception as e:
+        return {"success": False, "report_count": 0, "flagged": False, "message": f"تعذّر تسجيل البلاغ: {str(e)}"}
+
+
+
 
 # أشهر خدمات اختصار الروابط - يتم فك تشفيرها تلقائياً قبل التحليل
 SHORTENER_DOMAINS = {
@@ -189,6 +347,23 @@ BLACKLIST_DOMAINS = {
     "whatsapp-verify-account.net", "secure-bankofamerica.com",
     "google-account-recovery-alert.com", "verify-your-account-now.com"
 }
+
+# قائمة تبييض (Allowlist) للنطاقات الرسمية الحقيقية للجهات المذكورة في
+# قائمة الكلمات الدلالية أدناه. بدون هذه القائمة، رابط تسجيل دخول حقيقي
+# مثل instagram.com/accounts/login أو paypal.com/signin كان سيُعاقَب
+# بنفس شدة رابط تصيّد ينتحل صفته فقط لاحتوائه على كلمة "login" — وهذا
+# كان السبب الرئيسي لانخفاض دقة الفحص على الروابط السليمة.
+LEGITIMATE_BRAND_DOMAINS = {
+    "paypal.com", "netflix.com", "google.com", "accounts.google.com",
+    "microsoft.com", "live.com", "apple.com", "icloud.com", "amazon.com",
+    "facebook.com", "instagram.com", "whatsapp.com", "chase.com",
+    "wellsfargo.com", "bankofamerica.com", "ebay.com", "twitter.com", "x.com",
+    "linkedin.com", "github.com", "youtube.com", "stcpay.com.sa"
+}
+
+
+def is_domain_or_subdomain_of(domain: str, root: str) -> bool:
+    return domain == root or domain.endswith("." + root)
 
 
 def expand_url(url: str, max_redirects: int = 5):
@@ -232,6 +407,66 @@ def expand_url(url: str, max_redirects: int = 5):
 
 def get_domain(url: str) -> str:
     return url.split("//")[-1].split("/")[0].split(":")[0].lower()
+
+
+# ============================================================
+#  التحقق من أن المُدخل يشبه رابطاً فعلياً قبل تحليله
+#  بدون هذا الفحص، أي نص عشوائي (مثلاً جملة كلام عادي) كان يُقبل
+#  ويُضاف له https:// تلقائياً ثم يُعامَل كأنه نطاق حقيقي — فيعطي نتائج
+#  عشوائية غير منطقية بدل رسالة واضحة بأن المُدخل ليس رابطاً أصلاً.
+# ============================================================
+_DOMAIN_PATTERN = re.compile(
+    r'^([a-zA-Z0-9\u0600-\u06FF]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,24}$'
+)
+
+
+def is_plausible_url(raw_input: str) -> bool:
+    candidate = (raw_input or "").strip()
+    if not candidate or any(ch.isspace() for ch in candidate):
+        return False
+    stripped = re.sub(r'^https?://', '', candidate, flags=re.IGNORECASE)
+    host = stripped.split('/')[0].split('?')[0].split('#')[0].split(':')[0]
+    if not host or '.' not in host:
+        return False
+    return bool(_DOMAIN_PATTERN.match(host))
+
+
+# ============================================================
+#  فحص عمر تسجيل النطاق عبر WHOIS
+#  أكثر من 90% من مواقع التصيّد تُنشأ قبل استخدامها في الهجوم بأيام
+#  قليلة فقط، لذا نطاق حديث التسجيل جداً مؤشر خطر قوي ومستقل عن أي
+#  مصدر خارجي آخر. الفحص محدود بمهلة زمنية قصيرة كي لا يُبطئ الاستجابة
+#  أو يعلّق الدالة على بيئة serverless إن تأخر خادم WHOIS بالرد.
+# ============================================================
+DOMAIN_AGE_SUSPICIOUS_DAYS = 30
+
+
+def check_domain_age(domain: str):
+    try:
+        import whois
+    except ImportError:
+        return {"checked": False, "age_days": None, "error": "مكتبة python-whois غير مثبتة على الخادم"}
+
+    def _lookup():
+        return whois.whois(domain)
+
+    try:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_lookup)
+            w = future.result(timeout=6)
+
+        creation_date = getattr(w, "creation_date", None)
+        if isinstance(creation_date, list):
+            creation_date = creation_date[0] if creation_date else None
+
+        if not creation_date or not hasattr(creation_date, "year"):
+            return {"checked": True, "age_days": None, "error": "لا يوجد تاريخ تسجيل موثوق متاح لهذا النطاق"}
+
+        age_days = (datetime.datetime.now() - creation_date.replace(tzinfo=None)).days
+        return {"checked": True, "age_days": max(age_days, 0), "error": None}
+    except Exception as e:
+        return {"checked": False, "age_days": None, "error": str(e)}
 
 
 # ============================================================
@@ -394,8 +629,26 @@ def analyze_url(url: str):
     risk_score = 0
     original_input = url
 
+    if not is_plausible_url(url):
+        increment_stats({"total_scans": 1})
+        return {
+            "url": url,
+            "original_url": original_input,
+            "was_expanded": False,
+            "redirect_chain": [],
+            "status": "غير صالح",
+            "risk_score": 0,
+            "reasons": ["المُدخل الذي كتبته لا يبدو رابطاً صالحاً (لا يحتوي على نطاق واضح). تأكد من كتابة رابط حقيقي، مثل example.com أو https://example.com."],
+            "external_sources": {}
+        }
+
+    # ملاحظة مهمة (إصلاح دقة): إذا كتب المستخدم رابطاً بدون بروتوكول
+    # (مثلاً "google.com") كنا سابقاً نفترضه HTTP تلقائياً ثم نعاقبه على
+    # كونه "غير مشفر" — وهذا خطأ منطقي لأن الغالبية العظمى من المواقع اليوم
+    # تعمل بـ HTTPS افتراضياً. الافتراض الصحيح هو HTTPS ما لم يكتب
+    # المستخدم http:// صراحةً، أو ينتهي مسار إعادة توجيه فعلي عند HTTP.
     if not url.startswith(("http://", "https://")):
-        url = "http://" + url
+        url = "https://" + url
 
     initial_domain = get_domain(url)
     clean_initial = initial_domain[4:] if initial_domain.startswith("www.") else initial_domain
@@ -416,8 +669,8 @@ def analyze_url(url: str):
         url = expansion_info["final_url"]
 
     if url.startswith("http://"):
-        risk_score += 30
-        reasons.append("الرابط يستخدم بروتوكول HTTP غير المشفر والمكشوف للتنصت.")
+        risk_score += 20
+        reasons.append("الرابط يستخدم بروتوكول HTTP غير المشفر والمكشوف للتنصت (وليس HTTPS).")
 
     domain = get_domain(url)
     clean_domain = domain[4:] if domain.startswith("www.") else domain
@@ -427,30 +680,92 @@ def analyze_url(url: str):
         risk_score += 60
         reasons.append(f"⚠️ النطاق ({clean_domain}) مسجّل ضمن القائمة السوداء المحلية لأشهر نطاقات التصيّد الاحتيالي المعروفة.")
 
-    # --- 3) الكلمات الدلالية المستخدمة في التصيد ---
-    phishing_keywords = ["login", "signin", "bank", "secure", "update", "verify", "free-gift", "rewards", "netflix", "paypal"]
-    found_keywords = [kw for kw in phishing_keywords if kw in url.lower()]
-    if found_keywords:
-        risk_score += 40
-        reasons.append(f"الرابط يحتوي على كلمات دلالية تستخدم في التصيد الإلكتروني: ({', '.join(found_keywords)})")
+    # --- 2ب) فحص القائمة السوداء المجتمعية (تبليغات مستخدمين مستقلين) ---
+    community_result = check_community_blacklist(clean_domain)
+    if community_result["flagged"]:
+        risk_score = max(risk_score, 85)
+        reasons.insert(0, f"🚩 بلّغ {community_result['report_count']} مستخدماً مستقلاً عن هذا النطاق كرابط احتيالي عبر منصتنا.")
+    elif community_result["report_count"] > 0:
+        reasons.append(f"ℹ️ تم الإبلاغ عن هذا النطاق مرة واحدة سابقاً من مستخدم آخر (لم يصل بعد لعتبة التأكيد المجتمعي).")
 
-    if len(url) > 75:
-        risk_score += 15
-        reasons.append("الرابط طويل بشكل غير طبيعي، وغالباً ما يُستخدم لإخفاء النطاق الحقيقي.")
+    # --- 3) أسماء جهات معروفة داخل النطاق (انتحال هوية) + كلمات عامة مشبوهة ---
+    # إصلاح دقة إضافي: كلمة عامة واحدة مثل "verify" أو "update" شائعة جداً
+    # في أسماء نطاقات مشروعة تماماً لا علاقة لها بالتصيد (مثال: مشروعك
+    # نفسه "smart-verify" يحتوي كلمة verify وليس رابطاً احتيالياً). لذلك
+    # فصلنا الفحص لمستويين: (أ) اسم جهة معروفة فعلياً (paypal, netflix...)
+    # داخل نطاق ليس نطاقها الرسمي = إشارة انتحال قوية جداً. (ب) كلمات
+    # عامة غامضة (verify, secure, update...) لا تُحتسب إلا إذا تكررت
+    # أكثر من واحدة بنفس النطاق، لأن كلمة واحدة فقط ضعيفة جداً كدليل.
+    is_known_legit_brand = any(is_domain_or_subdomain_of(clean_domain, root) for root in LEGITIMATE_BRAND_DOMAINS)
+
+    if not is_known_legit_brand:
+        brand_names = ["paypal", "netflix", "apple", "amazon", "google", "facebook",
+                       "instagram", "whatsapp", "microsoft", "ebay", "chase",
+                       "wellsfargo", "bankofamerica", "visa", "mastercard"]
+        generic_words = ["login", "signin", "secure", "update", "verify", "account",
+                          "confirm", "free-gift", "rewards"]
+
+        brand_in_domain = [b for b in brand_names if b in clean_domain.lower()]
+        generic_in_domain = [g for g in generic_words if g in clean_domain.lower()]
+
+        if brand_in_domain:
+            risk_score += 45
+            reasons.append(f"النطاق يحتوي على اسم جهة معروفة ({', '.join(brand_in_domain)}) رغم أنه ليس نطاقها الرسمي — نمط شائع جداً في انتحال الهوية (مثال: paypal-secure-login.com بدل paypal.com).")
+        elif len(generic_in_domain) >= 2:
+            risk_score += 20
+            reasons.append(f"النطاق يحتوي على أكثر من كلمة عامة مرتبطة بمحاولات التصيد معاً ({', '.join(generic_in_domain)})، وهذا التجمّع أكثر دلالة من كلمة واحدة بمفردها.")
+        elif generic_in_domain:
+            risk_score += 5
+            reasons.append(f"النطاق يحتوي على كلمة عامة ({generic_in_domain[0]}) قد ترتبط أحياناً بالتصيد، لكنها إشارة ضعيفة جداً بمفردها وشائعة في نطاقات مشروعة كثيرة.")
+
+    if len(url) > 100:
+        risk_score += 8
+        reasons.append("الرابط طويل بشكل غير معتاد، وهذا مؤشر ضعيف بحد ذاته وقد يكون بسبب معرّفات تتبّع عادية (UTM) لا علاقة لها بالتصيّد.")
 
     # --- 4) التحقق من شهادة SSL على النطاق النهائي بعد فك التشفير ---
-    try:
-        context = ssl.create_default_context()
-        with socket.create_connection((domain, 443), timeout=3) as sock:
-            with context.wrap_socket(sock, server_hostname=domain) as ssock:
-                ssock.getpeercert()
-    except Exception:
-        risk_score += 15
-        reasons.append("فشل التحقق من شهادة الأمان SSL للنطاق أو أن الموقع غير متصل بالإنترنت حالياً.")
+    # نتخطى هذا الفحص للنطاقات الرسمية المعروفة تماماً (شهاداتها مؤكدة
+    # أصلاً)، ونخفّف وزن الفشل لأن انقطاعاً شبكياً عابراً أو حجب مؤقت
+    # للمنفذ لا يعني بالضرورة أن الموقع خطر.
+    if not is_known_legit_brand:
+        try:
+            context = ssl.create_default_context()
+            with socket.create_connection((domain, 443), timeout=3) as sock:
+                with context.wrap_socket(sock, server_hostname=domain) as ssock:
+                    ssock.getpeercert()
+        except Exception:
+            risk_score += 10
+            reasons.append("فشل التحقق من شهادة الأمان SSL للنطاق، أو أن الموقع غير متصل بالإنترنت حالياً، أو أن الفحص لم يتمكن من الوصول للمنفذ 443 (قد يكون بسبب قيود الشبكة على الخادم نفسه وليس بالضرورة خطأ من الموقع المفحوص).")
+
+    # --- 4ب) فحص عمر تسجيل النطاق عبر WHOIS ---
+    domain_age_result = {"checked": False, "age_days": None, "error": None}
+    if not is_known_legit_brand:
+        domain_age_result = check_domain_age(clean_domain)
+        if domain_age_result["checked"] and domain_age_result["age_days"] is not None:
+            age_days = domain_age_result["age_days"]
+            if age_days <= DOMAIN_AGE_SUSPICIOUS_DAYS:
+                risk_score += 35
+                reasons.insert(0, f"🕐 النطاق تم تسجيله حديثاً جداً (منذ {age_days} يوماً فقط) — أكثر من 90% من مواقع التصيّد تُنشأ قبل استخدامها بأيام قليلة.")
+            elif age_days <= 180:
+                risk_score += 10
+                reasons.append(f"⏳ النطاق حديث نسبياً (عمره {age_days} يوماً)، وهذا يستدعي حذراً إضافياً رغم عدم كونه دليلاً قاطعاً.")
 
     # --- 5) مصادر التهديد الحية الخارجية: Google Safe Browsing + VirusTotal ---
-    gsb_result = check_google_safe_browsing(url)
-    vt_result = check_virustotal_url(url)
+    # كاش لمدة 24 ساعة على الرابط النهائي (بعد فك أي اختصار) لتفادي استهلاك
+    # حصة VirusTotal (500 طلب/يوم) عند تكرار فحص نفس الرابط.
+    external_cache_key = _cache_key("urlcheck", url)
+    cached_external = cache_get(external_cache_key)
+    if cached_external:
+        gsb_result = cached_external["gsb"]
+        vt_result = cached_external["vt"]
+        vt_result["from_cache"] = True
+    else:
+        gsb_result = check_google_safe_browsing(url)
+        vt_result = check_virustotal_url(url)
+        vt_result["from_cache"] = False
+        # لا نخزّن بالكاش إلا نتيجة نهائية أكيدة (وليست "قيد الفحص لأول مرة")
+        # حتى يُعاد فحصها قريباً وتظهر نتيجتها الحقيقية بأسرع وقت.
+        if vt_result["checked"] and not vt_result.get("pending"):
+            cache_set(external_cache_key, {"gsb": gsb_result, "vt": vt_result})
 
     if gsb_result["checked"] and gsb_result["malicious"]:
         risk_score = 100
@@ -470,12 +785,10 @@ def analyze_url(url: str):
 
     risk_score = min(risk_score, 100)
     status = "خطر" if risk_score >= 50 else "آمن مبدئياً"
-    stats["total_scans"] += 1
     if status == "خطر":
-        stats["danger_count"] += 1
-        stats["phishing_urls"] += 1
+        increment_stats({"total_scans": 1, "danger_count": 1, "phishing_urls": 1})
     else:
-        stats["safe_count"] += 1
+        increment_stats({"total_scans": 1, "safe_count": 1})
 
     return {
         "url": url,
@@ -487,7 +800,9 @@ def analyze_url(url: str):
         "reasons": reasons if reasons else ["لا توجد مؤشرات خطر واضحة."],
         "external_sources": {
             "google_safe_browsing": gsb_result,
-            "virustotal": vt_result
+            "virustotal": vt_result,
+            "community_blacklist": community_result,
+            "domain_age": domain_age_result
         }
     }
 
@@ -508,12 +823,10 @@ def analyze_text(text: str):
             reasons.append(reason)
     risk_score = min(risk_score, 100)
     status = "احتيال محتمل" if risk_score >= 35 else "يبدو طبيعياً"
-    stats["total_scans"] += 1
     if status == "احتيال محتمل":
-        stats["danger_count"] += 1
-        stats["scam_texts"] += 1
+        increment_stats({"total_scans": 1, "danger_count": 1, "scam_texts": 1})
     else:
-        stats["safe_count"] += 1
+        increment_stats({"total_scans": 1, "safe_count": 1})
     return {"text": text, "status": status, "risk_score": risk_score, "reasons": reasons if reasons else ["لم نكتشف عبارات احتيالية شائعة."]}
 
 
@@ -553,12 +866,10 @@ def analyze_image(image_bytes: bytes):
 
     risk_score = min(risk_score, 100)
     status = "معدلة/مشبوهة" if risk_score >= 50 else "سليمة"
-    stats["total_scans"] += 1
     if status == "معدلة/مشبوهة":
-        stats["danger_count"] += 1
-        stats["manipulated_images"] += 1
+        increment_stats({"total_scans": 1, "danger_count": 1, "manipulated_images": 1})
     else:
-        stats["safe_count"] += 1
+        increment_stats({"total_scans": 1, "safe_count": 1})
 
     return {
         "status": status,
@@ -663,17 +974,12 @@ class WhatsAppVerifyRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=10)
 
 
+class ReportDomainRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2048)
+    user_email: Optional[str] = None
+
+
 @app.get("/", response_class=HTMLResponse)
-def intro(request: Request):
-    """مقدمة سينمائية (شعار Smart Verify) تُعرض عند دخول الموقع لأول مرة،
-    ثم تنتقل تلقائياً إلى الصفحة الرئيسية على /home."""
-    try:
-        return templates.TemplateResponse(request=request, name="intro.html")
-    except Exception as e:
-        return HTMLResponse(content=f"<h3>خطأ في العثور على intro.html داخل مجلد templates</h3>", status_code=500)
-
-
-@app.get("/home", response_class=HTMLResponse)
 def home(request: Request):
     try:
         return templates.TemplateResponse(request=request, name="index.html")
@@ -691,7 +997,7 @@ def dashboard(request: Request):
 
 @app.get("/api/stats")
 def get_stats():
-    return stats
+    return load_persisted_stats()
 
 
 @app.get("/api/history")
@@ -705,15 +1011,27 @@ def api_get_history(email: str = ""):
 
 
 @app.post("/api/scan-url")
-def api_scan_url(data: URLScanRequest):
+@limiter.limit("20/minute")
+def api_scan_url(request: Request, data: URLScanRequest):
     result = analyze_url(data.url)
     if data.user_email:
         save_scan_history(data.user_email, data.user_name or "", "رابط (URL)", result.get("original_url", data.url), result["status"], result["risk_score"])
     return result
 
 
+@app.post("/api/report-domain")
+@limiter.limit("10/minute")
+def api_report_domain(request: Request, data: ReportDomainRequest):
+    """يسجّل بلاغاً مجتمعياً عن نطاق مشبوه؛ بعد وصول التبليغات المستقلة لعتبة معيّنة يُعامَل كخطر مؤكَّد بالفحوصات القادمة."""
+    url = data.url if data.url.startswith(("http://", "https://")) else "http://" + data.url
+    domain = get_domain(url)
+    clean_domain = domain[4:] if domain.startswith("www.") else domain
+    return report_domain_to_community(clean_domain, data.user_email or "")
+
+
 @app.post("/api/scan-text")
-def api_scan_text(data: TextScanRequest):
+@limiter.limit("20/minute")
+def api_scan_text(request: Request, data: TextScanRequest):
     result = analyze_text(data.text)
     if data.user_email:
         save_scan_history(data.user_email, data.user_name or "", "رسالة نصية", data.text, result["status"], result["risk_score"])
@@ -721,7 +1039,8 @@ def api_scan_text(data: TextScanRequest):
 
 
 @app.post("/api/scan-image")
-async def api_scan_image(file: UploadFile = File(...), user_email: str = Form(None), user_name: str = Form(None)):
+@limiter.limit("15/minute")
+async def api_scan_image(request: Request, file: UploadFile = File(...), user_email: str = Form(None), user_name: str = Form(None)):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="الملف يجب أن يكون صورة")
     file_bytes = await file.read()
@@ -732,7 +1051,8 @@ async def api_scan_image(file: UploadFile = File(...), user_email: str = Form(No
 
 
 @app.post("/api/chat")
-def api_chat(data: ChatRequest):
+@limiter.limit("30/minute")
+def api_chat(request: Request, data: ChatRequest):
     message = data.message.strip()
     message_lower = message.lower()
 
@@ -789,17 +1109,64 @@ def google_auth(data: GoogleAuthRequest):
         raise HTTPException(status_code=400, detail="رمز التحقق من جوجل غير صالح أو منتهي الصلاحية")
 
 
+def _store_otp(phone: str, code: str):
+    """يخزّن كود OTP مع طابع زمني (لصلاحية OTP_TTL_SECONDS)، بـ Firestore إن مفعّلاً وإلا محلياً."""
+    now = datetime.datetime.utcnow()
+    if firebase_db:
+        try:
+            from firebase_admin import firestore
+            firebase_db.collection("otp_codes").document(phone).set({
+                "code": code, "created_at": firestore.SERVER_TIMESTAMP
+            })
+            return
+        except Exception:
+            pass
+    temp_whatsapp_codes[phone] = (code, now)
+
+
+def _verify_and_consume_otp(phone: str, code: str) -> bool:
+    """يتحقق من الكود ضمن مدة صلاحيته، ويحذفه فوراً بعد نجاح التحقق (استخدام لمرة واحدة)."""
+    now = datetime.datetime.utcnow()
+    if firebase_db:
+        try:
+            doc_ref = firebase_db.collection("otp_codes").document(phone)
+            doc = doc_ref.get()
+            if doc.exists:
+                data = doc.to_dict()
+                created_at = data.get("created_at")
+                created_at = created_at.replace(tzinfo=None) if hasattr(created_at, "replace") else created_at
+                if created_at and (now - created_at).total_seconds() <= OTP_TTL_SECONDS and data.get("code") == code:
+                    doc_ref.delete()
+                    return True
+            return False
+        except Exception:
+            pass
+    entry = temp_whatsapp_codes.get(phone)
+    if entry:
+        stored_code, created_at = entry
+        if (now - created_at).total_seconds() <= OTP_TTL_SECONDS and stored_code == code:
+            del temp_whatsapp_codes[phone]
+            return True
+    return False
+
+
 # مسار إرسال كود التحقق OTP إلى واتساب المستخدم
 @app.post("/api/auth/whatsapp/send")
-def send_whatsapp_otp(data: WhatsAppSendRequest):
+@limiter.limit("3/minute")
+def send_whatsapp_otp(request: Request, data: WhatsAppSendRequest):
     phone = data.phone
 
     otp_code = str(random.randint(100000, 999999))
-    temp_whatsapp_codes[phone] = otp_code
+    _store_otp(phone, otp_code)
+
+    # ملاحظة أمان مهمة: كود OTP لا يُعاد أبداً بجسم الاستجابة إلا في وضع
+    # DEV_MODE المحلي الصريح (متغير بيئة). إعادته بالإنتاج يعني أن أي شخص
+    # يفتح Developer Tools يقدر يسجّل دخول دون استلام الكود فعلياً عبر واتساب.
+    dev_code_field = {"code": otp_code} if DEV_MODE else {}
 
     if not ULTRAMSG_INSTANCE_ID or not ULTRAMSG_TOKEN:
         # لم يتم ضبط بيانات UltraMsg بعد كمتغيرات بيئة -> وضع محاكاة محلي فوري
-        return {"success": True, "fallback": True, "code": otp_code, "message": "تم تشغيل وضع المحاكاة المحلي (لم يتم ضبط UltraMsg بعد)."}
+        return {"success": True, "fallback": True, **dev_code_field, "message": "تم تشغيل وضع المحاكاة المحلي (لم يتم ضبط UltraMsg بعد)."}
 
     message_text = f"🛡️ [Smart Verify]\n\nكود التحقق الخاص بك هو: *{otp_code}*\n\nيرجى إدخاله لتأكيد تسجيل الدخول."
 
@@ -818,19 +1185,19 @@ def send_whatsapp_otp(data: WhatsAppSendRequest):
         if res_json.get("sent") == "true" or "success" in res_json:
             return {"success": True, "message": "تم إرسال كود التحقق بنجاح!"}
         else:
-            return {"success": True, "fallback": True, "code": otp_code, "message": "تم توليد الكود محلياً لعرضه بالمناقشة."}
+            return {"success": True, "fallback": True, **dev_code_field, "message": "تعذّر تأكيد إرسال الرسالة عبر واتساب، تم تفعيل وضع بديل."}
     except Exception:
-        return {"success": True, "fallback": True, "code": otp_code, "message": "تم تشغيل وضع المحاكاة المحلي بنجاح للمشروع."}
+        return {"success": True, "fallback": True, **dev_code_field, "message": "تعذّر الاتصال بخدمة واتساب، تم تفعيل وضع بديل."}
 
 
 # مسار التحقق من الكود المدخل لواتساب
 @app.post("/api/auth/whatsapp/verify")
-def verify_whatsapp_otp(data: WhatsAppVerifyRequest):
+@limiter.limit("5/minute")
+def verify_whatsapp_otp(request: Request, data: WhatsAppVerifyRequest):
     phone = data.phone
     code = data.code
 
-    if phone in temp_whatsapp_codes and temp_whatsapp_codes[phone] == code:
-        del temp_whatsapp_codes[phone]
+    if _verify_and_consume_otp(phone, code):
         return {"success": True, "message": "تم تسجيل الدخول عبر واتساب بنجاح!"}
 
-    raise HTTPException(status_code=400, detail="كود التحقق غير صحيح")
+    raise HTTPException(status_code=400, detail="كود التحقق غير صحيح أو منتهي الصلاحية")
