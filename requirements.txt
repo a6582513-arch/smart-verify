@@ -7,4 +7,5 @@ requests
 google-auth
 firebase-admin
 python-whois
-slowapi
+qrcode
+google-genai

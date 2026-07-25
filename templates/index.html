@@ -51,6 +51,32 @@
             animation: pulse-cyan 3s infinite;
         }
 
+        /* ===== نظام الصفحات (Sidebar Navigation SPA) ===== */
+        .page { display: none; }
+        .page.active { display: block; animation: pageFadeIn 0.35s ease; }
+        @keyframes pageFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .sidebar-link { color: #94a3b8; }
+        .sidebar-link:hover { background: rgba(15, 23, 42, 0.8); color: #e2e8f0; }
+        .sidebar-link.active {
+            background: rgba(6, 182, 212, 0.12);
+            color: #22d3ee;
+            box-shadow: inset 3px 0 0 0 #06b6d4;
+            text-shadow: 0 0 8px rgba(6, 182, 212, 0.4);
+        }
+        @media (min-width: 768px) {
+            #sidebar { transform: none !important; }
+        }
+        #sidebar.mobile-open { transform: translateX(0) !important; }
+
+        /* ===== أثر المسح الأمني (Radar Scan Trail) يتبع الماوس ===== */
+        #radar-canvas {
+            position: fixed; inset: 0; width: 100vw; height: 100vh;
+            pointer-events: none; z-index: 9999; mix-blend-mode: screen;
+        }
+
         /* ===== مؤشر الفحص التفاعلي (Scanning Spinner) ===== */
         #scan-overlay {
             position: absolute;
@@ -155,12 +181,17 @@
     </style>
 </head>
 <body class="min-h-screen flex flex-col justify-between overflow-x-hidden">
+    <canvas id="radar-canvas"></canvas>
+
 
     <div class="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none z-0"></div>
 
     <header class="border-b border-cyan-500/20 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+        <div class="max-w-[1600px] mx-auto px-4 md:px-6 py-4 flex justify-between items-center">
             <div class="flex items-center gap-3">
+                <button id="sidebar-toggle-btn" class="md:hidden text-slate-400 hover:text-cyan-400 ml-1" onclick="toggleSidebar()">
+                    <i class="fa-solid fa-bars text-lg"></i>
+                </button>
                 <div class="bg-cyan-950 border border-cyan-500 p-2.5 rounded-lg text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]">
                     <i class="fa-solid fa-user-shield text-2xl"></i>
                 </div>
@@ -169,30 +200,59 @@
                     <span class="text-[9px] text-cyan-400 tracking-wider uppercase font-bold">Secure Core v2.0</span>
                 </div>
             </div>
-            <nav class="hidden md:flex gap-6 text-sm font-semibold text-slate-400 items-center">
-                <a href="#scanner" class="hover:text-cyan-400 hover:neon-text-cyan transition duration-300">أدوات الفحص</a>
-                <a href="#stats-section" class="hover:text-cyan-400 hover:neon-text-cyan transition duration-300">الإحصائيات حية</a>
-                <a href="#assistant" class="hover:text-purple-400 hover:neon-text-purple transition duration-300">المستشار الذكي</a>
-                <a href="#simulator" class="hover:text-purple-400 hover:neon-text-purple transition duration-300">محاكي التصيّد</a>
-                
-                <div id="auth-area" class="mr-4">
-                    <button onclick="openLoginModal()" id="login-btn" class="bg-cyan-950/80 border border-cyan-500 hover:bg-cyan-900/50 text-cyan-300 px-5 py-2 rounded-xl text-xs font-black tracking-wider transition duration-300 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
-                        <i class="fa-solid fa-fingerprint ml-1.5"></i> بوابة الدخول
+            <div id="auth-area">
+                <button onclick="openLoginModal()" id="login-btn" class="bg-cyan-950/80 border border-cyan-500 hover:bg-cyan-900/50 text-cyan-300 px-5 py-2 rounded-xl text-xs font-black tracking-wider transition duration-300 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                    <i class="fa-solid fa-fingerprint ml-1.5"></i> بوابة الدخول
+                </button>
+                <div id="user-info" class="hidden flex items-center gap-3 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+                    <img id="user-avatar" src="" alt="Avatar" class="w-6 h-6 rounded-full border border-cyan-500">
+                    <span class="text-xs text-slate-400 font-semibold hidden sm:inline">مرحباً، <span id="display-username" class="text-cyan-400 font-bold"></span></span>
+                    <a id="dashboard-link" href="/dashboard" class="hidden text-indigo-400 hover:text-indigo-300 text-xs font-bold transition duration-200" title="لوحة التحكم">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </a>
+                    <button onclick="logout()" class="text-rose-400 hover:text-rose-300 text-xs font-bold transition duration-200">
+                        <i class="fa-solid fa-power-off"></i>
                     </button>
-                    <div id="user-info" class="hidden flex items-center gap-3 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
-                        <img id="user-avatar" src="" alt="Avatar" class="w-6 h-6 rounded-full border border-cyan-500">
-                        <span class="text-xs text-slate-400 font-semibold">مرحباً، <span id="display-username" class="text-cyan-400 font-bold"></span></span>
-                        <a id="dashboard-link" href="/dashboard" class="hidden text-indigo-400 hover:text-indigo-300 text-xs font-bold transition duration-200" title="لوحة التحكم">
-                            <i class="fa-solid fa-clock-rotate-left"></i>
-                        </a>
-                        <button onclick="logout()" class="text-rose-400 hover:text-rose-300 text-xs font-bold transition duration-200">
-                            <i class="fa-solid fa-power-off"></i>
-                        </button>
-                    </div>
                 </div>
-            </nav>
+            </div>
         </div>
     </header>
+
+    <div class="flex items-start relative z-10">
+        <!-- ===== القائمة الجانبية ===== -->
+        <aside id="sidebar" class="fixed md:sticky top-0 md:top-[73px] right-0 h-screen md:h-[calc(100vh-73px)] w-64 bg-slate-950/95 md:bg-slate-950/40 border-l border-slate-800 backdrop-blur-xl z-40 translate-x-full md:translate-x-0 transition-transform duration-300 flex flex-col shrink-0">
+            <div class="p-5 flex items-center justify-between md:hidden border-b border-slate-800">
+                <span class="text-cyan-400 font-black text-sm font-orbitron">القائمة</span>
+                <button onclick="toggleSidebar()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <nav class="flex-1 p-4 space-y-1.5 overflow-y-auto">
+                <button onclick="showPage('page-home')" data-page="page-home" class="sidebar-link active w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition duration-300">
+                    <i class="fa-solid fa-house w-4"></i> الرئيسية
+                </button>
+                <button onclick="showPage('page-scan')" data-page="page-scan" class="sidebar-link w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition duration-300">
+                    <i class="fa-solid fa-radar w-4"></i> أدوات الفحص
+                </button>
+                <button onclick="showPage('page-simulator')" data-page="page-simulator" class="sidebar-link w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition duration-300">
+                    <i class="fa-solid fa-graduation-cap w-4"></i> محاكي التصيّد
+                </button>
+                <button onclick="showPage('page-assistant')" data-page="page-assistant" class="sidebar-link w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition duration-300">
+                    <i class="fa-solid fa-shield-cat w-4"></i> رقيب — المساعد الأمني
+                </button>
+
+                <div class="pt-4 mt-4 border-t border-slate-800/80 space-y-1.5">
+                    <a href="/dashboard" class="w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-slate-400 hover:bg-slate-900 hover:text-indigo-300 transition duration-300">
+                        <i class="fa-solid fa-clock-rotate-left w-4"></i> لوحة التحكم
+                    </a>
+                    <a href="/download" class="w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-slate-400 hover:bg-slate-900 hover:text-emerald-300 transition duration-300">
+                        <i class="fa-solid fa-mobile-screen-button w-4"></i> تطبيق الجوال
+                    </a>
+                </div>
+            </nav>
+            <div class="p-4 border-t border-slate-800/80 text-[10px] text-slate-600 text-center">
+                © 2026 Smart Verify<br>جميع العمليات مشفرة ومحمية
+            </div>
+        </aside>
+        <div id="sidebar-backdrop" class="hidden fixed inset-0 bg-black/60 z-30 md:hidden" onclick="toggleSidebar()"></div>
 
     <!-- واجهة تسجيل الدخول المنبثقة المتطورة لتدعم جوجل -->
     <div id="login-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-[100] flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300">
@@ -261,7 +321,10 @@
         </div>
     </div>
 
-    <main class="max-w-7xl mx-auto px-6 py-8 w-full flex-grow space-y-12 z-10 relative">
+    <main class="max-w-6xl mx-auto px-4 md:px-6 py-8 w-full flex-grow z-10 relative min-w-0">
+
+        <!-- ================= صفحة: الرئيسية ================= -->
+        <div id="page-home" class="page active space-y-12">
         <section class="text-center py-10 space-y-4">
             <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 text-xs font-bold mb-4 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
                 <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
@@ -298,7 +361,11 @@
                 <div class="text-slate-500 text-xs mt-1 font-semibold uppercase tracking-wider">معدل التهديد العام</div>
             </div>
         </section>
+        </div>
+        <!-- ================= /صفحة: الرئيسية ================= -->
 
+        <!-- ================= صفحة: أدوات الفحص ================= -->
+        <div id="page-scan" class="page space-y-12">
         <!-- لوحة أدوات الفحص -->
         <section id="scanner" class="glass-panel rounded-3xl p-6 md:p-8 pulse-neon relative">
             <!-- مؤشر التحميل الذكي التفاعلي أثناء الفحص -->
@@ -514,7 +581,11 @@
                 </div>
             </div>
         </section>
+        </div>
+        <!-- ================= /صفحة: أدوات الفحص ================= -->
 
+        <!-- ================= صفحة: محاكي التصيّد ================= -->
+        <div id="page-simulator" class="page space-y-12">
         <!-- محاكي هجمات التصيّد التعليمي -->
         <section id="simulator" class="glass-panel rounded-3xl p-6 md:p-8 border-purple-500/20">
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -539,33 +610,153 @@
                 </button>
             </div>
         </section>
+        </div>
+        <!-- ================= /صفحة: محاكي التصيّد ================= -->
 
-        <!-- المستشار المساعد -->
+        <!-- ================= صفحة: رقيب - المساعد الأمني ================= -->
+        <div id="page-assistant" class="page">
         <section id="assistant" class="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-900/40 border border-slate-800 rounded-3xl p-6 md:p-8">
             <div class="md:col-span-1 space-y-4 flex flex-col justify-center">
-                <div class="text-purple-400 text-4xl"><i class="fa-solid fa-user-gear"></i></div>
-                <h3 class="text-2xl font-black text-white neon-text-purple font-orbitron">Smart Assistant</h3>
-                <p class="text-slate-400 text-sm leading-relaxed">اسأل مستشارك الأمني المدمج والمدعوم بالذكاء الاصطناعي للحصول على توجيه فوري.</p>
+                <div class="text-purple-400 text-4xl"><i class="fa-solid fa-shield-cat"></i></div>
+                <h3 class="text-2xl font-black text-white neon-text-purple font-orbitron">رقيب</h3>
+                <p class="text-slate-500 text-xs -mt-3 uppercase tracking-widest font-bold">RAQEEB · Security Advisor</p>
+                <p class="text-slate-400 text-sm leading-relaxed">مساعدك الأمني الرقمي المدمج. اسأل رقيب عن أي رابط أو رسالة، أو أخبره فوراً إن كنت تمر بحالة طارئة.</p>
             </div>
-            <div class="md:col-span-2 flex flex-col h-[320px] bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-inner">
+            <div class="md:col-span-2 flex flex-col h-[420px] bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-inner">
                 <div id="chat-box" class="flex-grow p-4 overflow-y-auto space-y-4 text-xs md:text-sm">
                     <div class="bg-slate-900/60 border border-slate-800 text-slate-300 p-3.5 rounded-2xl rounded-tr-none max-w-[85%] leading-relaxed shadow-sm">
-                         مرحباً بك! أنا المستشار الافتراضي لنظام Smart Verify. كيف يمكنني مساعدتك؟
+                         مرحباً، أنا <b class="text-purple-300">رقيب</b> 🛡️ — مساعدك الأمني بمنصة Smart Verify. اسألني عن أي رابط أو رسالة، أو أخبرني فوراً إن كنت تمر بحالة طارئة.
                     </div>
                 </div>
                 <div class="p-3 border-t border-slate-800/80 flex gap-2 bg-slate-950/40">
-                    <input type="text" id="chat-input" placeholder="اكتب سؤالك الأمني هنا..." class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex-grow focus:outline-none focus:border-purple-500 text-slate-300 text-sm">
+                    <input type="text" id="chat-input" placeholder="اكتب سؤالك لرقيب هنا..." class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex-grow focus:outline-none focus:border-purple-500 text-slate-300 text-sm">
                     <button onclick="sendChatMessage()" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl text-sm font-black transition duration-300">إرسال</button>
                 </div>
             </div>
         </section>
+        </div>
+        <!-- ================= /صفحة: رقيب ================= -->
+
     </main>
+    </div>
+    <!-- إغلاق الحاوية المرنة (sidebar + main) -->
 
     <footer class="border-t border-slate-900 bg-slate-950 py-6 text-center text-slate-600 text-[11px] tracking-wider uppercase">
         <p>© 2026 Smart Verify. جميع الحقوق والعمليات التشغيلية مشفرة ومحمية.</p>
     </footer>
 
     <script>
+        // ============================================================
+        //  التنقل بين الصفحات (Sidebar SPA Navigation)
+        // ============================================================
+        function showPage(pageId) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+
+            const target = document.getElementById(pageId);
+            if (target) target.classList.add('active');
+
+            const link = document.querySelector(`.sidebar-link[data-page="${pageId}"]`);
+            if (link) link.classList.add('active');
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            history.replaceState(null, '', '#' + pageId);
+
+            // إغلاق القائمة الجانبية تلقائياً بعد الاختيار على الجوال
+            if (window.innerWidth < 768) toggleSidebar(false);
+        }
+
+        function toggleSidebar(forceState) {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            const shouldOpen = forceState !== undefined ? forceState : !sidebar.classList.contains('mobile-open');
+            sidebar.classList.toggle('mobile-open', shouldOpen);
+            backdrop.classList.toggle('hidden', !shouldOpen);
+        }
+
+        // ============================================================
+        //  أثر المسح الأمني (Radar Scan Trail) يتبع الماوس
+        // ============================================================
+        (function initRadarTrail() {
+            const canvas = document.getElementById('radar-canvas');
+            const ctx = canvas.getContext('2d');
+            let width, height;
+            let rings = [];
+            let lastPing = 0;
+            let mouseX = -999, mouseY = -999;
+
+            function resize() {
+                width = canvas.width = window.innerWidth;
+                height = canvas.height = window.innerHeight;
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            // تجاهل الأجهزة اللمسية (لا يوجد ماوس فعلي)
+            const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+            if (isTouchDevice) return;
+
+            window.addEventListener('mousemove', (e) => {
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+                const now = performance.now();
+                if (now - lastPing > 90) {
+                    rings.push({ x: mouseX, y: mouseY, r: 2, alpha: 0.55, born: now });
+                    lastPing = now;
+                    if (rings.length > 12) rings.shift();
+                }
+            });
+
+            function draw() {
+                ctx.clearRect(0, 0, width, height);
+
+                // حلقات المسح المتلاشية (Ping trail)
+                rings.forEach(ring => {
+                    ring.r += 1.1;
+                    ring.alpha *= 0.94;
+                    if (ring.alpha < 0.02) return;
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(6, 182, 212, ${ring.alpha})`;
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                });
+                rings = rings.filter(r => r.alpha >= 0.02);
+
+                // مؤشر رادار دائم يتبع الماوس مع خط مسح دوّار
+                if (mouseX > -900) {
+                    const t = performance.now() / 700;
+                    ctx.beginPath();
+                    ctx.arc(mouseX, mouseY, 16, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(6, 182, 212, 0.35)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
+                    ctx.save();
+                    ctx.translate(mouseX, mouseY);
+                    ctx.rotate(t);
+                    const grad = ctx.createLinearGradient(0, 0, 16, 0);
+                    grad.addColorStop(0, 'rgba(6, 182, 212, 0.9)');
+                    grad.addColorStop(1, 'rgba(6, 182, 212, 0)');
+                    ctx.strokeStyle = grad;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(16, 0);
+                    ctx.stroke();
+                    ctx.restore();
+
+                    ctx.beginPath();
+                    ctx.arc(mouseX, mouseY, 2, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(6, 182, 212, 0.9)';
+                    ctx.fill();
+                }
+
+                requestAnimationFrame(draw);
+            }
+            requestAnimationFrame(draw);
+        })();
+
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -979,9 +1170,7 @@
                 if(data.success) {
                     alert(data.message);
                     document.getElementById('wa-code-area').classList.remove('hidden');
-                    if(data.fallback && data.code) {
-                        // الكود يظهر فقط في وضع التطوير المحلي (DEV_MODE) على الخادم؛
-                        // بالإنتاج data.code لا يُرسل أصلاً حفاظاً على الأمان، فتُخفى هذه الرسالة.
+                    if(data.fallback) {
                         document.getElementById('fallback-notification').style.display = 'block';
                         document.getElementById('fallback-code').innerText = data.code;
                     } else {
@@ -1563,6 +1752,11 @@
             resetSimulator();
             // تحميل قاعدة كلمات السر الشائعة بعد رسم الصفحة مباشرة دون حجب التحميل الأولي
             setTimeout(loadCommonPasswordsDB, 50);
+
+            const initialPage = (location.hash || '').replace('#', '');
+            if (initialPage && document.getElementById(initialPage)) {
+                showPage(initialPage);
+            }
         };
 
     </script>

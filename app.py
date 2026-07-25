@@ -23,20 +23,8 @@ from PIL.ExifTags import TAGS
 # استيراد مكتبة التحقق من جوجل
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 
 app = FastAPI(title="منصة Smart Verify للتحقق الرقمي")
-
-# ============================================================
-#  Rate Limiting: بدون هذا، أي طرف يقدر يستنزف حصة VirusTotal/Google
-#  Safe Browsing اليومية المجانية بسكريبت بسيط يضرب endpoint الفحص
-#  آلاف المرات بالدقيقة. الحد هنا لكل عنوان IP.
-# ============================================================
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS: allow_credentials=True مع allow_origins=["*"] مزيج غير صالح فعلياً
 # (المتصفحات ترفضه) وغير آمن أساساً. الواجهة لا تعتمد على كوكيز/جلسات
@@ -86,6 +74,25 @@ VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "")
 GOOGLE_SAFE_BROWSING_API_KEY = os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY", "")
 
 # ============================================================
+#  إعداد Google Gemini API (مجاني) لتشغيل مساعد "رقيب" بذكاء اصطناعي حقيقي
+#  بدل الردود الجاهزة القديمة (keyword matching).
+#
+#  خطوات التفعيل:
+#  1) أنشئ مفتاح API مجاني من aistudio.google.com (بدون بطاقة ائتمان)
+#  2) ضعه كمتغير بيئة باسم GEMINI_API_KEY في إعدادات Vercel
+#     (أو في ملف .env محلياً للتجربة فقط)
+#  دون ضبط هذا المتغير، يعمل "رقيب" بالردود الاحتياطية القديمة تلقائياً.
+# ============================================================
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+gemini_client = None
+if GEMINI_API_KEY:
+    try:
+        from google import genai as google_genai
+        gemini_client = google_genai.Client(api_key=GEMINI_API_KEY)
+    except ImportError:
+        gemini_client = None
+
+# ============================================================
 #  إعداد Firebase (Firestore) لتخزين "سجل التحقق" الخاص بكل مستخدم
 #  مرتبطاً بحساب Google الذي سجّل به الدخول.
 #
@@ -117,96 +124,14 @@ stats = {
     "phishing_urls": 0, "scam_texts": 0, "manipulated_images": 0
 }
 
-# وضع التطوير المحلي فقط: يتحكم بسلوكيات لا يجب أن تعمل أبداً بالإنتاج
-# (مثل إرجاع كود OTP بالاستجابة). لا تفعّله أبداً على Vercel/الإنتاج.
-DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
-
-# ذاكرة مؤقتة لحفظ أكواد التحقق المرسلة عبر الواتساب (تُستخدم فقط كخطة
-# بديلة إن لم يكن Firestore مفعّلاً). كل قيمة هي (code, created_at) للتحقق
-# من انتهاء صلاحية الكود (TTL) وليس فقط تطابقه.
+# ذاكرة مؤقتة لحفظ أكواد التحقق المرسلة عبر الواتساب
+# ملاحظة معمارية: هذه الذاكرة داخل العملية (in-process) فقط، وعلى بيئة
+# serverless مثل Vercel لا يوجد ضمان بأن نفس النسخة (instance) التي أرسلت
+# الكود هي من ستتحقق منه لاحقاً. للاستخدام الفعلي في الإنتاج يُفضّل تخزين
+# الأكواد في Firestore (متوفر أصلاً في المشروع) مع صلاحية زمنية (TTL).
 temp_whatsapp_codes = {}
-OTP_TTL_SECONDS = 5 * 60  # صلاحية كود OTP: 5 دقائق
 ULTRAMSG_INSTANCE_ID = os.environ.get("ULTRAMSG_INSTANCE_ID", "")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN", "")
-
-# ============================================================
-#  كاش نتائج فحص الروابط (Google Safe Browsing + VirusTotal)
-#  الهدف: تفادي إعادة استهلاك حصة VirusTotal المجانية (500 طلب/يوم) عند
-#  فحص نفس الرابط أكثر من مرة خلال 24 ساعة. يُخزَّن بـ Firestore إن كان
-#  مفعّلاً (يبقى بين عمليات إعادة التشغيل)، وإلا بذاكرة محلية مؤقتة كخطة
-#  بديلة (تكفي لتقليل التكرار أثناء نفس الجلسة الحيّة على الخادم).
-# ============================================================
-SCAN_CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 ساعة
-_local_scan_cache = {}
-
-
-def _cache_key(prefix: str, value: str) -> str:
-    return f"{prefix}:{hashlib.sha256(value.encode()).hexdigest()}"
-
-
-def cache_get(key: str, ttl_seconds: int = SCAN_CACHE_TTL_SECONDS):
-    """يجلب قيمة من الكاش (Firestore أو الذاكرة المحلية) إن كانت ما زالت ضمن مدة صلاحيتها."""
-    now = datetime.datetime.utcnow()
-    if firebase_db:
-        try:
-            doc = firebase_db.collection("scan_cache").document(key).get()
-            if doc.exists:
-                data = doc.to_dict()
-                cached_at = data.get("cached_at")
-                if cached_at is not None:
-                    cached_at = cached_at.replace(tzinfo=None) if hasattr(cached_at, "replace") else cached_at
-                    if (now - cached_at).total_seconds() < ttl_seconds:
-                        return data.get("value")
-            return None
-        except Exception:
-            pass  # نتابع بدون كاش عند أي خلل بالاتصال بـ Firestore
-    entry = _local_scan_cache.get(key)
-    if entry and (now - entry[0]).total_seconds() < ttl_seconds:
-        return entry[1]
-    return None
-
-
-def cache_set(key: str, value: dict):
-    """يخزّن قيمة بالكاش (Firestore إن مفعّلاً، وإلا بالذاكرة المحلية)."""
-    now = datetime.datetime.utcnow()
-    if firebase_db:
-        try:
-            from firebase_admin import firestore
-            firebase_db.collection("scan_cache").document(key).set({
-                "value": value, "cached_at": firestore.SERVER_TIMESTAMP
-            })
-            return
-        except Exception:
-            pass
-    _local_scan_cache[key] = (now, value)
-
-
-def increment_stats(fields: dict):
-    """يحدّث الإحصائيات بالذاكرة المحلية (للاستجابة الفورية) وبـ Firestore
-    (كمصدر دائم لا يتصفّر مع cold start) في آن واحد، إن كان Firestore مفعّلاً."""
-    for k, v in fields.items():
-        stats[k] = stats.get(k, 0) + v
-    if firebase_db:
-        try:
-            from firebase_admin import firestore
-            updates = {k: firestore.Increment(v) for k, v in fields.items()}
-            firebase_db.collection("meta").document("stats").set(updates, merge=True)
-        except Exception:
-            pass
-
-
-def load_persisted_stats():
-    """يجلب الإحصائيات الدائمة من Firestore إن كانت متوفرة، مع تعبئة أي حقل ناقص بصفر."""
-    if not firebase_db:
-        return dict(stats)
-    try:
-        doc = firebase_db.collection("meta").document("stats").get()
-        merged = dict(stats)  # يضمن وجود كل المفاتيح الافتراضية حتى لو لم تُحفظ بعد
-        if doc.exists:
-            merged.update(doc.to_dict())
-        return merged
-    except Exception:
-        return dict(stats)
 
 
 def save_scan_history(user_email: str, user_name: str, scan_type: str, subject: str, status: str, risk_score: int):
@@ -574,11 +499,11 @@ BRAND_IMPERSONATION_KEYWORDS = [
 ]
 
 IMAGE_SCAM_TEXT_PATTERNS = {
-    r"تحديث بيانات|تحديث الحساب": "نص داخل الصورة يطلب تحديث بيانات حساسة، وهو أسلوب شائع في تصيّد الهوية.",
-    r"تم حظر|إيقاف الحساب|تعليق الحساب": "نص داخل الصورة يهدد بإيقاف أو حظر الحساب لدفع المستخدم للتصرف بذعر.",
-    r"رمز التحقق|كود التحقق|OTP": "نص داخل الصورة يطلب أو يعرض رمز تحقق، وقد يُستخدم كطعم لهندسة اجتماعية.",
-    r"فزت بـ|ربحت جائزة|مبروك": "نص داخل الصورة يستخدم أسلوب الجوائز الوهمية لإغراء الضحية.",
-    r"اضغط هنا|يرجى الضغط": "نص داخل الصورة يوجّه المستخدم لضغط رابط أو زر خارجي بشكل مباشر."
+    r"تحديث بيانات|تحديث الحساب": (22, "نص داخل الصورة يطلب تحديث بيانات حساسة، وهو أسلوب شائع في تصيّد الهوية."),
+    r"تم حظر|إيقاف الحساب|تعليق الحساب": (22, "نص داخل الصورة يهدد بإيقاف أو حظر الحساب لدفع المستخدم للتصرف بذعر."),
+    r"رمز التحقق|كود التحقق|OTP": (6, "نص داخل الصورة يعرض رمز تحقق — قد تكون هذه لقطة شاشة عادية تماماً لرسالة تحقق شرعية (مثل تأكيد دخول أو دفع)، وهذه إشارة ضعيفة جداً بمفردها لا تكفي وحدها للحكم بالخطر."),
+    r"فزت بـ|ربحت جائزة|مبروك": (18, "نص داخل الصورة يستخدم أسلوب الجوائز الوهمية لإغراء الضحية."),
+    r"اضغط هنا|يرجى الضغط": (8, "نص داخل الصورة يوجّه المستخدم لضغط رابط أو زر خارجي بشكل مباشر.")
 }
 
 
@@ -611,13 +536,13 @@ def analyze_image_text_content(ocr_text: str):
     text_lower = ocr_text.lower()
     matched_brand = [b for b in BRAND_IMPERSONATION_KEYWORDS if b.lower() in text_lower]
 
-    for pattern, reason in IMAGE_SCAM_TEXT_PATTERNS.items():
+    for pattern, (weight, reason) in IMAGE_SCAM_TEXT_PATTERNS.items():
         if re.search(pattern, ocr_text):
-            risk_add += 25
+            risk_add += weight
             reasons.append(reason)
 
     if matched_brand and risk_add > 0:
-        risk_add += 20
+        risk_add += 15
         brands_str = "، ".join(matched_brand[:3])
         reasons.append(f"⚠️ تم رصد ذكر جهة معروفة ({brands_str}) داخل نص مشبوه بالصورة، وهو نمط شائع لانتحال الهوية البصرية للبنوك والمنصات.")
 
@@ -630,7 +555,7 @@ def analyze_url(url: str):
     original_input = url
 
     if not is_plausible_url(url):
-        increment_stats({"total_scans": 1})
+        stats["total_scans"] += 1
         return {
             "url": url,
             "original_url": original_input,
@@ -750,22 +675,8 @@ def analyze_url(url: str):
                 reasons.append(f"⏳ النطاق حديث نسبياً (عمره {age_days} يوماً)، وهذا يستدعي حذراً إضافياً رغم عدم كونه دليلاً قاطعاً.")
 
     # --- 5) مصادر التهديد الحية الخارجية: Google Safe Browsing + VirusTotal ---
-    # كاش لمدة 24 ساعة على الرابط النهائي (بعد فك أي اختصار) لتفادي استهلاك
-    # حصة VirusTotal (500 طلب/يوم) عند تكرار فحص نفس الرابط.
-    external_cache_key = _cache_key("urlcheck", url)
-    cached_external = cache_get(external_cache_key)
-    if cached_external:
-        gsb_result = cached_external["gsb"]
-        vt_result = cached_external["vt"]
-        vt_result["from_cache"] = True
-    else:
-        gsb_result = check_google_safe_browsing(url)
-        vt_result = check_virustotal_url(url)
-        vt_result["from_cache"] = False
-        # لا نخزّن بالكاش إلا نتيجة نهائية أكيدة (وليست "قيد الفحص لأول مرة")
-        # حتى يُعاد فحصها قريباً وتظهر نتيجتها الحقيقية بأسرع وقت.
-        if vt_result["checked"] and not vt_result.get("pending"):
-            cache_set(external_cache_key, {"gsb": gsb_result, "vt": vt_result})
+    gsb_result = check_google_safe_browsing(url)
+    vt_result = check_virustotal_url(url)
 
     if gsb_result["checked"] and gsb_result["malicious"]:
         risk_score = 100
@@ -785,10 +696,12 @@ def analyze_url(url: str):
 
     risk_score = min(risk_score, 100)
     status = "خطر" if risk_score >= 50 else "آمن مبدئياً"
+    stats["total_scans"] += 1
     if status == "خطر":
-        increment_stats({"total_scans": 1, "danger_count": 1, "phishing_urls": 1})
+        stats["danger_count"] += 1
+        stats["phishing_urls"] += 1
     else:
-        increment_stats({"total_scans": 1, "safe_count": 1})
+        stats["safe_count"] += 1
 
     return {
         "url": url,
@@ -810,29 +723,43 @@ def analyze_url(url: str):
 def analyze_text(text: str):
     reasons = []
     risk_score = 0
+    # إصلاح دقة: كانت كل عبارة تضيف +35 ثابتة بغض النظر عن مدى تحديدها،
+    # فرسالة عادية جداً قد تصل لعتبة "احتيال" بمطابقة عبارة عامة واحدة فقط.
+    # الآن كل نمط له وزن يعكس قوة دلالته الفعلية، والعتبة رُفعت قليلاً
+    # حتى تحتاج المطابقة إشارتين متوسطتين أو إشارة قوية واحدة على الأقل.
     scam_patterns = {
-        r"تحديث بيانات": "محاولة انتحال صفة بنكية لتحديث البيانات وسرقة الحساب.",
-        r"فزت بـ|ربحت جائزة": "أسلوب الهندسة الاجتماعية لإغراء الضحية بالجوائز الوهمية.",
-        r"تم حظر|إيقاف بطاقتك": "إثارة الذعر والخوف لإجبار المستخدم على التصرف السريع.",
-        r"البريد السعودي|ارامكس|شحنة": "انتحال صفة شركات الشحن لدفع رسوم وهمية.",
-        r"يرجى الضغط على الرابط": "توجيه صريح ومشبوه لزيارة روابط خارجية."
+        r"تحديث بيانات": (30, "محاولة انتحال صفة بنكية لتحديث البيانات وسرقة الحساب."),
+        r"فزت ب|ربحت جائزة": (20, "أسلوب الهندسة الاجتماعية لإغراء الضحية بالجوائز الوهمية."),
+        r"أدخل بياناتك|ادخل بياناتك|أدخل معلوماتك": (20, "طلب صريح لإدخال بيانات شخصية أو مالية، نمط شائع لسرقة الهوية."),
+        r"تم حظر|إيقاف بطاقتك|تعليق بطاقتك": (30, "إثارة الذعر والخوف لإجبار المستخدم على التصرف السريع."),
+        r"البريد السعودي|ارامكس": (25, "انتحال صفة شركة شحن معروفة بالاسم لإضفاء مصداقية زائفة."),
+        r"شحنة معل|شحنتك معل": (10, "الإشارة لشحنة معلّقة دون تفاصيل، وقد تكون رسالة تسويقية عادية أو محاولة تصيد."),
+        r"جمركية|رسوم إضافية": (20, "طلب دفع رسوم غير متوقعة، أسلوب شائع في احتيال الشحن الوهمي."),
+        r"يرجى الضغط على الرابط|اضغط هنا لتفادي": (10, "توجيه لزيارة رابط خارجي، إشارة ضعيفة بمفردها لأنها شائعة أيضاً برسائل شرعية.")
     }
-    for pattern, reason in scam_patterns.items():
+    for pattern, (weight, reason) in scam_patterns.items():
         if re.search(pattern, text):
-            risk_score += 35
+            risk_score += weight
             reasons.append(reason)
     risk_score = min(risk_score, 100)
-    status = "احتيال محتمل" if risk_score >= 35 else "يبدو طبيعياً"
+    status = "احتيال محتمل" if risk_score >= 40 else "يبدو طبيعياً"
+    stats["total_scans"] += 1
     if status == "احتيال محتمل":
-        increment_stats({"total_scans": 1, "danger_count": 1, "scam_texts": 1})
+        stats["danger_count"] += 1
+        stats["scam_texts"] += 1
     else:
-        increment_stats({"total_scans": 1, "safe_count": 1})
+        stats["safe_count"] += 1
     return {"text": text, "status": status, "risk_score": risk_score, "reasons": reasons if reasons else ["لم نكتشف عبارات احتيالية شائعة."]}
 
 
 def analyze_image(image_bytes: bytes):
     reasons = []
-    risk_score = 10
+    # إصلاح دقة مهم: كانت نقطة البداية 10% + عقوبة تلقائية +30% لغياب EXIF،
+    # فأي صورة عادية توصل عبر واتساب أو انستقرام (تُزيل هذه التطبيقات بيانات
+    # EXIF تلقائياً كإجراء خصوصية قياسي) كانت تبدأ من 40% دون أي سبب حقيقي.
+    # كذلك وجود برنامج تحرير بالـ EXIF لا يعني بالضرورة تلاعباً ضاراً (فلاتر
+    # وتصغير الحجم أمور طبيعية جداً)، فخُفّض وزنها وأصبحت مؤشراً وليس حكماً.
+    risk_score = 0
     ocr_info = {"checked": False, "text": "", "error": None}
 
     try:
@@ -842,14 +769,14 @@ def analyze_image(image_bytes: bytes):
                 for tag, value in info.items():
                     decoded = TAGS.get(tag, tag)
                     if decoded == "Software":
-                        risk_score += 50
-                        reasons.append(f"تم تعديل هذه الصورة باستخدام برنامج خارجي: ({value}).")
+                        risk_score += 15
+                        reasons.append(f"تم تعديل هذه الصورة باستخدام برنامج خارجي: ({value}) — هذا لا يعني بالضرورة تلاعباً ضاراً (فلاتر أو تصغير حجم أمور شائعة)، لكنه مؤشر إضافي يُحتسب مع باقي عوامل الفحص.")
             if not info:
-                risk_score += 30
-                reasons.append("تمت إزالة جميع بيانات المصدر الأصلية للصورة (Metadata).")
+                risk_score += 8
+                reasons.append("تمت إزالة بيانات EXIF من الصورة، وهذا أمر شائع وطبيعي جداً لأي صورة تُرسَل عبر تطبيقات التواصل (واتساب، انستقرام...) كإجراء خصوصية تلقائي من التطبيق نفسه، وليس بالضرورة علامة تلاعب.")
     except Exception as e:
         reasons.append(f"خطأ أثناء قراءة الصورة: {str(e)}")
-        risk_score = 80
+        risk_score = 55
 
     # --- تحليل الصورة بالذكاء الاصطناعي الخفيف (OCR): رصد نصوص تحذيرية أو انتحال جهات رسمية ---
     ocr_info = extract_text_from_image(image_bytes)
@@ -866,10 +793,12 @@ def analyze_image(image_bytes: bytes):
 
     risk_score = min(risk_score, 100)
     status = "معدلة/مشبوهة" if risk_score >= 50 else "سليمة"
+    stats["total_scans"] += 1
     if status == "معدلة/مشبوهة":
-        increment_stats({"total_scans": 1, "danger_count": 1, "manipulated_images": 1})
+        stats["danger_count"] += 1
+        stats["manipulated_images"] += 1
     else:
-        increment_stats({"total_scans": 1, "safe_count": 1})
+        stats["safe_count"] += 1
 
     return {
         "status": status,
@@ -995,9 +924,43 @@ def dashboard(request: Request):
         return HTMLResponse(content=f"<h3>خطأ في العثور على dashboard.html داخل مجلد templates</h3>", status_code=500)
 
 
+# ============================================================
+#  صفحة تحميل تطبيق الجوال (APK)
+#  ضع رابط ملف الـ APK الفعلي (مثلاً من GitHub Releases) في متغير
+#  البيئة APK_DOWNLOAD_URL على Vercel. بدون ضبطه، تعرض الصفحة رسالة
+#  توضّح أن الرابط غير جاهز بعد بدل رابط معطّل بصمت.
+# ============================================================
+APK_DOWNLOAD_URL = os.environ.get("APK_DOWNLOAD_URL", "")
+
+
+@app.get("/download", response_class=HTMLResponse)
+def download_page(request: Request):
+    try:
+        return templates.TemplateResponse(request=request, name="download.html", context={"apk_url": APK_DOWNLOAD_URL})
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>خطأ في العثور على download.html داخل مجلد templates</h3>", status_code=500)
+
+
+@app.get("/api/download-qr")
+def download_qr():
+    """يولّد صورة QR تشير لرابط تحميل التطبيق مباشرة، ليتمكن أي شخص من مسحها بجواله."""
+    if not APK_DOWNLOAD_URL:
+        raise HTTPException(status_code=404, detail="رابط تحميل التطبيق غير مضبوط بعد (APK_DOWNLOAD_URL)")
+    try:
+        import qrcode
+        img = qrcode.make(APK_DOWNLOAD_URL)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(buf, media_type="image/png")
+    except ImportError:
+        raise HTTPException(status_code=500, detail="مكتبة qrcode غير مثبتة على الخادم")
+
+
 @app.get("/api/stats")
 def get_stats():
-    return load_persisted_stats()
+    return stats
 
 
 @app.get("/api/history")
@@ -1011,8 +974,7 @@ def api_get_history(email: str = ""):
 
 
 @app.post("/api/scan-url")
-@limiter.limit("20/minute")
-def api_scan_url(request: Request, data: URLScanRequest):
+def api_scan_url(data: URLScanRequest):
     result = analyze_url(data.url)
     if data.user_email:
         save_scan_history(data.user_email, data.user_name or "", "رابط (URL)", result.get("original_url", data.url), result["status"], result["risk_score"])
@@ -1020,8 +982,7 @@ def api_scan_url(request: Request, data: URLScanRequest):
 
 
 @app.post("/api/report-domain")
-@limiter.limit("10/minute")
-def api_report_domain(request: Request, data: ReportDomainRequest):
+def api_report_domain(data: ReportDomainRequest):
     """يسجّل بلاغاً مجتمعياً عن نطاق مشبوه؛ بعد وصول التبليغات المستقلة لعتبة معيّنة يُعامَل كخطر مؤكَّد بالفحوصات القادمة."""
     url = data.url if data.url.startswith(("http://", "https://")) else "http://" + data.url
     domain = get_domain(url)
@@ -1030,8 +991,7 @@ def api_report_domain(request: Request, data: ReportDomainRequest):
 
 
 @app.post("/api/scan-text")
-@limiter.limit("20/minute")
-def api_scan_text(request: Request, data: TextScanRequest):
+def api_scan_text(data: TextScanRequest):
     result = analyze_text(data.text)
     if data.user_email:
         save_scan_history(data.user_email, data.user_name or "", "رسالة نصية", data.text, result["status"], result["risk_score"])
@@ -1039,8 +999,7 @@ def api_scan_text(request: Request, data: TextScanRequest):
 
 
 @app.post("/api/scan-image")
-@limiter.limit("15/minute")
-async def api_scan_image(request: Request, file: UploadFile = File(...), user_email: str = Form(None), user_name: str = Form(None)):
+async def api_scan_image(file: UploadFile = File(...), user_email: str = Form(None), user_name: str = Form(None)):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="الملف يجب أن يكون صورة")
     file_bytes = await file.read()
@@ -1050,13 +1009,40 @@ async def api_scan_image(request: Request, file: UploadFile = File(...), user_em
     return result
 
 
-@app.post("/api/chat")
-@limiter.limit("30/minute")
-def api_chat(request: Request, data: ChatRequest):
-    message = data.message.strip()
-    message_lower = message.lower()
+RAQIB_SYSTEM_PROMPT = """أنت "رقيب 🛡️"، المساعد الأمني المدمج بمنصة Smart Verify للتحقق الرقمي.
+مهمتك مساعدة المستخدمين على فهم مخاطر الاحتيال الرقمي (التصيّد، الروابط المشبوهة،
+الرسائل الاحتيالية، انتحال الهوية) وشرح كيف تعمل أدوات المنصة (فحص الروابط،
+فحص الرسائل، فحص الصور بالـ OCR).
+تحدث بالعربية بأسلوب واضح ومباشر وودود، وردودك مختصرة (فقرة أو فقرتين، أو نقاط قصيرة عند الحاجة).
+لا تقدّم أي معلومة تقنية تساعد على تنفيذ عملية احتيال أو اختراق فعلية.
+إن سأل المستخدم عن شيء خارج نطاق الأمن الرقمي، أجب بإيجاز ثم أعد توجيهه بلطف نحو خدمات المنصة إن كان ذلك مناسباً."""
 
-    # --- الأولوية القصوى: سيناريوهات الطوارئ ---
+
+def raqib_fallback_reply(message: str) -> str:
+    """رد احتياطي يعتمد على مطابقة كلمات مفتاحية بسيطة، يُستخدم فقط إذا لم يتوفر
+    مفتاح Claude API أو تعذّر الاتصال به، حتى يبقى المساعد يعمل دون انقطاع كامل."""
+    message_lower = message.lower()
+    if any(w in message for w in ["من انت", "من أنت", "مين انت", "اسمك", "شو اسمك"]):
+        return "أنا رقيب 🛡️، المساعد الأمني المدمج بمنصة Smart Verify. مهمتي مساعدتك بفحص الروابط والرسائل والصور، وتزويدك بخطوات فورية إن مررت بحالة طارئة."
+    elif any(w in message for w in ["مرحبا", "اهلا", "أهلا", "السلام عليكم"]):
+        return "مرحباً بك، أنا رقيب 🛡️. يمكنني مساعدتك في فحص الروابط والرسائل والصور، أو تقديم إرشادات فورية إن كنت تمر بحالة طارئة."
+    elif "رابط" in message or "url" in message_lower:
+        return "عند فحص الروابط أقوم بفك تشفير الروابط المختصرة، ومطابقتها مع قائمة سوداء محلية للنطاقات الاحتيالية، والتحقق من شهادات SSL والكلمات المخادعة."
+    elif "رسالة" in message or "نص" in message:
+        return "رسائل الاحتيال تعتمد على الهندسة الاجتماعية لإثارة الذعر أو الطمع، وأقوم بتحليلها لغوياً لرصد الأنماط المعروفة."
+    elif "صورة" in message:
+        return "أفحص ميتاداتا الصور (EXIF)، وأستخرج أي نص داخلها بالذكاء الاصطناعي (OCR) لرصد انتحال الجهات الرسمية."
+    elif "مساعدة" in message or "help" in message_lower:
+        return "يمكنني مساعدتك في: فحص الروابط، تحليل الرسائل الاحتيالية، وفحص ميتاداتا الصور. وإن كنت تمر بحالة طارئة، اكتب مثلاً 'تم اختراقي' وسأزودك بخطوات فورية."
+    else:
+        return "أنا رقيب، مساعدك الأمني. اسألني عن الروابط أو الرسائل أو الصور، أو أخبرني إن كنت تمر بحالة أمنية طارئة."
+
+
+@app.post("/api/chat")
+def api_chat(data: ChatRequest):
+    message = data.message.strip()
+
+    # --- الأولوية القصوى: سيناريوهات الطوارئ (منطق ثابت، لا يعتمد على API خارجي) ---
     emergency = check_emergency(message)
     if emergency:
         reply_text = emergency["title"] + "\n" + "\n".join([f"{i+1}. {s}" for i, s in enumerate(emergency["steps"])])
@@ -1067,20 +1053,25 @@ def api_chat(request: Request, data: ChatRequest):
             "steps": emergency["steps"]
         }
 
-    if any(w in message for w in ["مرحبا", "اهلا", "أهلا", "السلام عليكم"]):
-        reply = "مرحباً بك في نظام عين الأمان 🛡️. يمكنني مساعدتك في فحص الروابط والرسائل والصور، أو تقديم إرشادات فورية إن كنت تمر بحالة طارئة."
-    elif "رابط" in message or "url" in message_lower:
-        reply = "عند فحص الروابط نقوم بفك تشفير الروابط المختصرة، ومطابقتها مع قائمة سوداء محلية للنطاقات الاحتيالية، والتحقق من شهادات SSL والكلمات المخادعة."
-    elif "رسالة" in message or "نص" in message:
-        reply = "رسائل الاحتيال تعتمد على الهندسة الاجتماعية لإثارة الذعر أو الطمع، ونقوم بتحليلها لغوياً لرصد الأنماط المعروفة."
-    elif "صورة" in message:
-        reply = "نفحص ميتاداتا الصور (EXIF) لكشف أي تعديل ببرمجيات خارجية أو إزالة متعمدة لبيانات المصدر."
-    elif "مساعدة" in message or "help" in message_lower:
-        reply = "يمكنني مساعدتك في: فحص الروابط، تحليل الرسائل الاحتيالية، وفحص ميتاداتا الصور. وإن كنت تمر بحالة طارئة، اكتب مثلاً 'تم اختراقي' وسأزودك بخطوات فورية."
-    else:
-        reply = "مرحباً بك في نظام عين الأمان. اسألني عن الروابط أو الرسائل أو الصور، أو أخبرني إن كنت تمر بحالة أمنية طارئة."
+    # --- الرد عبر Gemini API إن كان مفعّلاً، وإلا نستخدم الردود الاحتياطية ---
+    if gemini_client and message:
+        try:
+            from google.genai import types as genai_types
+            response = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=message,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=RAQIB_SYSTEM_PROMPT,
+                    max_output_tokens=500,
+                ),
+            )
+            reply = (response.text or "").strip()
+            if reply:
+                return {"reply": reply, "type": "normal"}
+        except Exception:
+            pass  # نسقط بهدوء إلى الرد الاحتياطي بدل كسر المحادثة
 
-    return {"reply": reply, "type": "normal"}
+    return {"reply": raqib_fallback_reply(message) if message else "اكتب رسالتك وسأساعدك.", "type": "normal"}
 
 
 # مسار استقبال وتحليل رمز التوثيق المرسل من جوجل (ID Token)
@@ -1109,64 +1100,17 @@ def google_auth(data: GoogleAuthRequest):
         raise HTTPException(status_code=400, detail="رمز التحقق من جوجل غير صالح أو منتهي الصلاحية")
 
 
-def _store_otp(phone: str, code: str):
-    """يخزّن كود OTP مع طابع زمني (لصلاحية OTP_TTL_SECONDS)، بـ Firestore إن مفعّلاً وإلا محلياً."""
-    now = datetime.datetime.utcnow()
-    if firebase_db:
-        try:
-            from firebase_admin import firestore
-            firebase_db.collection("otp_codes").document(phone).set({
-                "code": code, "created_at": firestore.SERVER_TIMESTAMP
-            })
-            return
-        except Exception:
-            pass
-    temp_whatsapp_codes[phone] = (code, now)
-
-
-def _verify_and_consume_otp(phone: str, code: str) -> bool:
-    """يتحقق من الكود ضمن مدة صلاحيته، ويحذفه فوراً بعد نجاح التحقق (استخدام لمرة واحدة)."""
-    now = datetime.datetime.utcnow()
-    if firebase_db:
-        try:
-            doc_ref = firebase_db.collection("otp_codes").document(phone)
-            doc = doc_ref.get()
-            if doc.exists:
-                data = doc.to_dict()
-                created_at = data.get("created_at")
-                created_at = created_at.replace(tzinfo=None) if hasattr(created_at, "replace") else created_at
-                if created_at and (now - created_at).total_seconds() <= OTP_TTL_SECONDS and data.get("code") == code:
-                    doc_ref.delete()
-                    return True
-            return False
-        except Exception:
-            pass
-    entry = temp_whatsapp_codes.get(phone)
-    if entry:
-        stored_code, created_at = entry
-        if (now - created_at).total_seconds() <= OTP_TTL_SECONDS and stored_code == code:
-            del temp_whatsapp_codes[phone]
-            return True
-    return False
-
-
 # مسار إرسال كود التحقق OTP إلى واتساب المستخدم
 @app.post("/api/auth/whatsapp/send")
-@limiter.limit("3/minute")
-def send_whatsapp_otp(request: Request, data: WhatsAppSendRequest):
+def send_whatsapp_otp(data: WhatsAppSendRequest):
     phone = data.phone
 
     otp_code = str(random.randint(100000, 999999))
-    _store_otp(phone, otp_code)
-
-    # ملاحظة أمان مهمة: كود OTP لا يُعاد أبداً بجسم الاستجابة إلا في وضع
-    # DEV_MODE المحلي الصريح (متغير بيئة). إعادته بالإنتاج يعني أن أي شخص
-    # يفتح Developer Tools يقدر يسجّل دخول دون استلام الكود فعلياً عبر واتساب.
-    dev_code_field = {"code": otp_code} if DEV_MODE else {}
+    temp_whatsapp_codes[phone] = otp_code
 
     if not ULTRAMSG_INSTANCE_ID or not ULTRAMSG_TOKEN:
         # لم يتم ضبط بيانات UltraMsg بعد كمتغيرات بيئة -> وضع محاكاة محلي فوري
-        return {"success": True, "fallback": True, **dev_code_field, "message": "تم تشغيل وضع المحاكاة المحلي (لم يتم ضبط UltraMsg بعد)."}
+        return {"success": True, "fallback": True, "code": otp_code, "message": "تم تشغيل وضع المحاكاة المحلي (لم يتم ضبط UltraMsg بعد)."}
 
     message_text = f"🛡️ [Smart Verify]\n\nكود التحقق الخاص بك هو: *{otp_code}*\n\nيرجى إدخاله لتأكيد تسجيل الدخول."
 
@@ -1185,19 +1129,19 @@ def send_whatsapp_otp(request: Request, data: WhatsAppSendRequest):
         if res_json.get("sent") == "true" or "success" in res_json:
             return {"success": True, "message": "تم إرسال كود التحقق بنجاح!"}
         else:
-            return {"success": True, "fallback": True, **dev_code_field, "message": "تعذّر تأكيد إرسال الرسالة عبر واتساب، تم تفعيل وضع بديل."}
+            return {"success": True, "fallback": True, "code": otp_code, "message": "تم توليد الكود محلياً لعرضه بالمناقشة."}
     except Exception:
-        return {"success": True, "fallback": True, **dev_code_field, "message": "تعذّر الاتصال بخدمة واتساب، تم تفعيل وضع بديل."}
+        return {"success": True, "fallback": True, "code": otp_code, "message": "تم تشغيل وضع المحاكاة المحلي بنجاح للمشروع."}
 
 
 # مسار التحقق من الكود المدخل لواتساب
 @app.post("/api/auth/whatsapp/verify")
-@limiter.limit("5/minute")
-def verify_whatsapp_otp(request: Request, data: WhatsAppVerifyRequest):
+def verify_whatsapp_otp(data: WhatsAppVerifyRequest):
     phone = data.phone
     code = data.code
 
-    if _verify_and_consume_otp(phone, code):
+    if phone in temp_whatsapp_codes and temp_whatsapp_codes[phone] == code:
+        del temp_whatsapp_codes[phone]
         return {"success": True, "message": "تم تسجيل الدخول عبر واتساب بنجاح!"}
 
-    raise HTTPException(status_code=400, detail="كود التحقق غير صحيح أو منتهي الصلاحية")
+    raise HTTPException(status_code=400, detail="كود التحقق غير صحيح")
