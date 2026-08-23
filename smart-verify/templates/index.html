@@ -1,0 +1,1835 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Verify - نظام التحقق الرقمي الذكي</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate:  { 50:'#F5F6F8',100:'#E9EBEF',200:'#D3D7DE',300:'#AEB4C0',400:'#868EA0',500:'#656D80',600:'#4C5266',700:'#383D4F',800:'#23273A',900:'#141623',950:'#0A0B12' },
+                        cyan:   { 50:'#F1F8FE',100:'#E3F1FC',200:'#CBE4FA',300:'#A8D2F5',400:'#7BB8EE',500:'#5B9FE0',600:'#4483C2',700:'#35659A',800:'#2B4E78',900:'#23405F',950:'#172A40' },
+                        purple: { 50:'#F8F5FD',100:'#F0EBFB',200:'#E3DCF7',300:'#CFC5F0',400:'#B3A6E8',500:'#9A8AD9',600:'#7E6EC0',700:'#64579E',800:'#4F4480',900:'#403768',950:'#292245' },
+                        indigo: { 50:'#F3F5FD',100:'#E7EBFA',200:'#D3DAF3',300:'#B8C4EF',400:'#93A3E4',500:'#7688D6',600:'#5C6EBE',700:'#4A599C',800:'#3C477C',900:'#303A62',950:'#1F2542' },
+                        emerald:{ 50:'#F1F9F5',100:'#E3F3EB',200:'#CDEBDD',300:'#A8D9C3',400:'#82C3A6',500:'#62AC8B',600:'#4C8E70',700:'#3D7259',800:'#305A47',900:'#1E362B',950:'#16261F' },
+                        amber:  { 50:'#FCF4E7',100:'#F8EAD3',200:'#F3DBB6',300:'#EBC895',400:'#E0B36E',500:'#D19D4C',600:'#B07E36',700:'#8C632A',800:'#6D4D22',900:'#543C1C',950:'#362813' },
+                        rose:   { 50:'#FBF1F2',100:'#F7E4E7',200:'#F1D2D6',300:'#E9B7BE',400:'#DE96A0',500:'#CC7683',600:'#AD5763',700:'#8A4550',800:'#6B363F',900:'#4F2830',950:'#331A1F' }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- استدعاء مكتبة جوجل الرسمية للأزرار التفاعلية -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #0A0B12;
+            background-image:
+                radial-gradient(at 12% -10%, rgba(123, 184, 238, 0.12) 0px, transparent 55%),
+                radial-gradient(at 88% 110%, rgba(154, 138, 217, 0.10) 0px, transparent 55%),
+                radial-gradient(at 50% 50%, rgba(255, 255, 255, 0.015) 0px, transparent 70%);
+            color: #EDEFF3;
+        }
+
+        .font-orbitron {
+            font-family: 'Space Grotesk', 'Cairo', sans-serif;
+        }
+
+        .neon-border-cyan {
+            box-shadow: 0 10px 34px -12px rgba(123, 184, 238, 0.28);
+            border: 1px solid rgba(123, 184, 238, 0.4);
+        }
+        .neon-text-cyan {
+            text-shadow: 0 0 14px rgba(123, 184, 238, 0.32);
+        }
+        .neon-text-purple {
+            text-shadow: 0 0 14px rgba(154, 138, 217, 0.30);
+        }
+
+        /* ===== زجاج سائل (Liquid Glass) — السطح الأساسي لكل اللوحات ===== */
+        .glass-panel {
+            position: relative;
+            background: linear-gradient(165deg, rgba(255,255,255,0.075), rgba(255,255,255,0.02));
+            backdrop-filter: blur(26px) saturate(160%);
+            -webkit-backdrop-filter: blur(26px) saturate(160%);
+            border: 1px solid rgba(255,255,255,0.10);
+            box-shadow: 0 24px 60px -24px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.09);
+        }
+        .glass-panel::before {
+            content: '';
+            position: absolute; inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(140deg, rgba(255,255,255,0.32), rgba(255,255,255,0) 45%);
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
+        @keyframes pulse-glass {
+            0%, 100% { box-shadow: 0 0 0 rgba(123, 184, 238, 0); }
+            50% { box-shadow: 0 0 26px rgba(123, 184, 238, 0.28); }
+        }
+        .pulse-neon {
+            animation: pulse-glass 3.6s ease-in-out infinite;
+        }
+
+        /* ===== نظام الصفحات (Sidebar Navigation SPA) ===== */
+        .page { display: none; }
+        .page.active { display: block; animation: pageFadeIn 0.4s cubic-bezier(0.16,1,0.3,1); }
+        @keyframes pageFadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .sidebar-link { color: #8B92A5; border-radius: 0.9rem; transition: all 0.25s ease; }
+        .sidebar-link:hover { background: rgba(255,255,255,0.06); color: #EDEFF3; }
+        .sidebar-link.active {
+            background: linear-gradient(135deg, rgba(123,184,238,0.16), rgba(154,138,217,0.09));
+            color: #BFE0FF;
+            box-shadow: inset 0 0 0 1px rgba(123,184,238,0.32);
+        }
+        #sidebar.mobile-open { transform: translateX(0) !important; }
+        #sidebar-hover-zone { transition: background 0.2s ease; }
+
+        /* ===== أثر المسح الأمني (Radar Scan Trail) يتبع الماوس ===== */
+        #radar-canvas {
+            position: fixed; inset: 0; width: 100vw; height: 100vh;
+            pointer-events: none; z-index: 9999; mix-blend-mode: screen;
+        }
+
+        /* ===== مؤشر الفحص التفاعلي (Scanning Spinner) ===== */
+        #scan-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(10, 11, 18, 0.88);
+            backdrop-filter: blur(18px) saturate(150%);
+            z-index: 40;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 1.5rem;
+            gap: 1.25rem;
+        }
+        #scan-overlay.active { display: flex; }
+        .scan-ring {
+            width: 84px; height: 84px;
+            border-radius: 50%;
+            border: 3px solid rgba(123, 184, 238, 0.15);
+            border-top-color: #7BB8EE;
+            border-right-color: #9A8AD9;
+            animation: spin-ring 1.3s cubic-bezier(0.65,0,0.35,1) infinite;
+            position: relative;
+        }
+        @keyframes spin-ring { to { transform: rotate(360deg); } }
+        .scan-stage-text {
+            font-family: 'Space Grotesk', 'Cairo', sans-serif;
+            font-size: 0.75rem;
+            letter-spacing: 0.08em;
+            color: #BFE0FF;
+            text-shadow: none;
+            min-height: 1.2rem;
+            text-align: center;
+        }
+        .scan-progress-track {
+            width: 220px; height: 5px;
+            background: rgba(255,255,255,0.07);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .scan-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #7BB8EE, #9A8AD9);
+            border-radius: 999px;
+            transition: width 0.4s ease;
+        }
+
+        /* ===== محاكي هجمات التصيّد (Phishing Simulator) ===== */
+        .sim-card {
+            background: linear-gradient(165deg, rgba(255,255,255,0.065), rgba(255,255,255,0.018));
+            backdrop-filter: blur(22px) saturate(155%);
+            border: 1px solid rgba(154, 138, 217, 0.22);
+            border-radius: 1.5rem;
+            transition: all 0.4s cubic-bezier(0.16,1,0.3,1);
+            position: relative;
+            overflow: hidden;
+        }
+        .sim-card::after {
+            content: '';
+            position: absolute; top: -60%; left: -60%;
+            width: 40%; height: 220%;
+            background: linear-gradient(75deg, transparent, rgba(255,255,255,0.14), transparent);
+            transform: skewX(-20deg) translateX(-40%);
+            transition: transform 1s ease;
+            pointer-events: none;
+        }
+        .sim-card:hover::after { transform: skewX(-20deg) translateX(320%); }
+        .sim-card:hover {
+            border-color: rgba(154, 138, 217, 0.5);
+            box-shadow: 0 20px 50px -16px rgba(154, 138, 217, 0.28);
+            transform: translateY(-4px);
+        }
+        .sim-flag-btn {
+            transition: all 0.25s ease;
+        }
+        .sim-flag-btn.selected-real {
+            background: rgba(130, 195, 166, 0.18) !important;
+            border-color: #82C3A6 !important;
+            color: #B7E3CC !important;
+        }
+        .sim-flag-btn.selected-fake {
+            background: rgba(222, 150, 160, 0.18) !important;
+            border-color: #DE96A0 !important;
+            color: #F1C4CB !important;
+        }
+        .sim-verdict-correct {
+            box-shadow: 0 16px 36px -14px rgba(130, 195, 166, 0.38);
+            border-color: rgba(130, 195, 166, 0.6) !important;
+        }
+        .sim-verdict-wrong {
+            box-shadow: 0 16px 36px -14px rgba(222, 150, 160, 0.38);
+            border-color: rgba(222, 150, 160, 0.6) !important;
+        }
+        .neon-flicker {
+            /* أُزيل تأثير الوميض ليتماشى مع الطابع الزجاجي الهادئ */
+            opacity: 1;
+        }
+
+        /* ===== رسائل الطوارئ في المستشار الذكي ===== */
+        .chat-emergency {
+            background: rgba(204, 118, 131, 0.12);
+            border: 1px solid rgba(204, 118, 131, 0.4);
+            box-shadow: 0 10px 28px -12px rgba(204, 118, 131, 0.22);
+        }
+        .chat-emergency-title {
+            color: #F1C4CB;
+            font-weight: 900;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between overflow-x-hidden">
+    <canvas id="radar-canvas"></canvas>
+
+
+    <div class="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none z-0"></div>
+
+    <header class="border-b border-cyan-500/20 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-[1600px] mx-auto px-4 md:px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <button id="sidebar-toggle-btn" class="text-slate-400 hover:text-cyan-400 ml-1" onclick="toggleSidebar()">
+                    <i class="fa-solid fa-bars text-lg"></i>
+                </button>
+                <div class="bg-cyan-950 border border-cyan-500 p-2.5 rounded-lg text-cyan-400 shadow-[0_0_10px_rgba(123, 184, 238,0.4)]">
+                    <i class="fa-solid fa-user-shield text-2xl"></i>
+                </div>
+                <div class="flex flex-col">
+                    <span class="text-2xl font-black tracking-widest text-white neon-text-cyan font-orbitron">SMART VERIFY</span>
+                    <span class="text-[9px] text-cyan-400 tracking-wider uppercase font-bold">Secure Core v2.0</span>
+                </div>
+            </div>
+            <div id="auth-area">
+                <button onclick="openLoginModal()" id="login-btn" class="bg-cyan-950/80 border border-cyan-500 hover:bg-cyan-900/50 text-cyan-300 px-5 py-2 rounded-xl text-xs font-black tracking-wider transition duration-300 shadow-[0_0_10px_rgba(123, 184, 238,0.3)]">
+                    <i class="fa-solid fa-fingerprint ml-1.5"></i> بوابة الدخول
+                </button>
+                <div id="user-info" class="hidden flex items-center gap-3 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+                    <img id="user-avatar" src="" alt="Avatar" class="w-6 h-6 rounded-full border border-cyan-500">
+                    <span class="text-xs text-slate-400 font-semibold hidden sm:inline">مرحباً، <span id="display-username" class="text-cyan-400 font-bold"></span></span>
+                    <a id="dashboard-link" href="/dashboard" class="hidden text-indigo-400 hover:text-indigo-300 text-xs font-bold transition duration-200" title="لوحة التحكم">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </a>
+                    <button onclick="logout()" class="text-rose-400 hover:text-rose-300 text-xs font-bold transition duration-200">
+                        <i class="fa-solid fa-power-off"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="flex items-start relative z-10">
+        <!-- ===== القائمة الجانبية ===== -->
+        <aside id="sidebar" class="fixed top-0 md:top-[73px] right-0 h-screen md:h-[calc(100vh-73px)] w-64 bg-slate-950/95 border-l border-slate-800 backdrop-blur-xl z-40 translate-x-full shadow-2xl transition-transform duration-300 flex flex-col shrink-0">
+            <div class="p-5 flex items-center justify-between md:hidden border-b border-slate-800">
+                <span class="text-cyan-400 font-black text-sm font-orbitron">القائمة</span>
+                <button onclick="toggleSidebar()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <nav class="flex-1 p-4 space-y-1.5 overflow-y-auto">
+                <button onclick="showPage('page-home')" data-page="page-home" class="sidebar-link active w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition duration-300">
+                    <i class="fa-solid fa-house w-4"></i> الرئيسية
+                </button>
+                <button onclick="showPage('page-scan')" data-page="page-scan" class="sidebar-link w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition duration-300">
+                    <i class="fa-solid fa-radar w-4"></i> أدوات الفحص
+                </button>
+                <button onclick="showPage('page-simulator')" data-page="page-simulator" class="sidebar-link w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition duration-300">
+                    <i class="fa-solid fa-graduation-cap w-4"></i> محاكي التصيّد
+                </button>
+                <button onclick="showPage('page-assistant')" data-page="page-assistant" class="sidebar-link w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition duration-300">
+                    <i class="fa-solid fa-shield-cat w-4"></i> AUTH — المساعد الأمني
+                </button>
+
+                <div class="pt-4 mt-4 border-t border-slate-800/80 space-y-1.5">
+                    <a href="/dashboard" class="w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-slate-400 hover:bg-slate-900 hover:text-indigo-300 transition duration-300">
+                        <i class="fa-solid fa-clock-rotate-left w-4"></i> لوحة التحكم
+                    </a>
+                    <a href="/download" class="w-full text-right flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-slate-400 hover:bg-slate-900 hover:text-emerald-300 transition duration-300">
+                        <i class="fa-solid fa-mobile-screen-button w-4"></i> تطبيق الجوال
+                    </a>
+                </div>
+            </nav>
+            <div class="p-4 border-t border-slate-800/80 text-[10px] text-slate-600 text-center">
+                © 2026 Smart Verify<br>جميع العمليات مشفرة ومحمية
+            </div>
+        </aside>
+        <div id="sidebar-backdrop" class="hidden fixed inset-0 bg-black/60 z-30 md:hidden" onclick="toggleSidebar()"></div>
+        <!-- منطقة استشعار خفية عند الحافة اليمنى: تُظهر القائمة عند الاقتراب منها بالماوس (لأجهزة سطح المكتب) -->
+        <div id="sidebar-hover-zone" class="hidden md:block fixed top-[73px] right-0 h-[calc(100vh-73px)] w-3 z-40"></div>
+
+    <!-- واجهة تسجيل الدخول المنبثقة المتطورة لتدعم جوجل -->
+    <div id="login-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-[100] flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300">
+        <div class="glass-panel w-[95%] max-w-lg rounded-3xl p-8 border-cyan-500/30 shadow-[0_0_40px_rgba(123, 184, 238,0.15)] relative">
+            <button onclick="closeLoginModal()" class="absolute top-5 left-5 text-slate-500 hover:text-slate-300 transition duration-200">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+            <div class="text-center mb-6">
+                <div class="inline-flex bg-cyan-950 border border-cyan-500 p-3.5 rounded-full text-cyan-400 shadow-[0_0_15px_rgba(123, 184, 238,0.4)] mb-3">
+                    <i class="fa-solid fa-shield-halved text-2xl"></i>
+                </div>
+                <h3 class="text-xl font-black text-white neon-text-cyan font-orbitron uppercase">SECURE PORTAL</h3>
+                <p class="text-slate-500 text-xs mt-1">سجل دخولك عبر جوجل أو الواتساب</p>
+            </div>
+            
+            <div class="space-y-6">
+                <!-- زر تسجيل الدخول الذكي بواسطة Google -->
+                <div class="flex flex-col items-center justify-center bg-slate-900 border border-slate-800/80 p-4 rounded-xl gap-3">
+                    <span class="text-xs text-slate-400 font-bold">تسجيل دخول سريع ومؤمن:</span>
+                    <div id="g_id_onload"
+                         data-client_id="873065114114-g9a11ts2a0nj41pulqg8v25dfpo22dec.apps.googleusercontent.com"
+                         data-callback="handleCredentialResponse"
+                         data-auto_prompt="false">
+                    </div>
+                    <div class="g_id_signin"
+                         data-type="standard"
+                         data-size="large"
+                         data-theme="filled_dark"
+                         data-text="sign_in_with"
+                         data-shape="rectangular"
+                         data-logo_alignment="left">
+                    </div>
+                </div>
+
+                <div class="flex items-center my-4">
+                    <div class="flex-grow border-t border-slate-800"></div>
+                    <span class="mx-4 text-xs text-slate-600 uppercase font-black">أو عبر واتساب</span>
+                    <div class="flex-grow border-t border-slate-800"></div>
+                </div>
+
+                <div id="whatsapp-input-area" class="space-y-3">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-slate-400 text-xs font-bold">رقم الهاتف الدولي:</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="wa-phone" placeholder="966500000000" class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-cyan-400 focus:outline-none focus:border-cyan-500 flex-grow text-left" dir="ltr">
+                            <button onclick="sendWhatsAppOTP()" class="bg-emerald-600 hover:bg-emerald-500 text-slate-950 px-4 py-3 rounded-xl font-black text-xs transition duration-300 flex items-center justify-center gap-1">
+                                <i class="fa-solid fa-paper-plane"></i> إرسال الكود
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="wa-code-area" class="hidden flex flex-col gap-2 pt-2 border-t border-slate-800/50">
+                        <div class="bg-amber-500/10 border border-amber-500/30 text-amber-400 p-3 rounded-xl text-xs" id="fallback-notification" style="display: none;">
+                            💡 للتجربة: استخدم الكود <strong id="fallback-code" class="text-sm underline"></strong>
+                        </div>
+                        <label class="text-slate-400 text-xs font-bold">كود التحقق:</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="wa-code" placeholder="------" class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-center text-emerald-400 focus:outline-none focus:border-emerald-500 tracking-widest font-bold flex-grow" dir="ltr">
+                            <button onclick="verifyWhatsAppOTP()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-6 py-3 rounded-xl font-black text-xs transition duration-300">
+                                تفعيل
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main class="max-w-6xl mx-auto px-4 md:px-6 py-8 w-full flex-grow z-10 relative min-w-0">
+
+        <!-- ================= صفحة: الرئيسية ================= -->
+        <div id="page-home" class="page active space-y-12">
+        <section class="text-center py-10 space-y-4">
+            <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 text-xs font-bold mb-4 shadow-[0_0_15px_rgba(123, 184, 238,0.1)]">
+                <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                نظام التحليل الهيكلي والتحقق الرقمي
+            </div>
+            <h1 class="text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-purple-500 pb-2 font-orbitron">
+                SMART VERIFY
+            </h1>
+            <p class="text-slate-400 text-base md:text-lg max-w-2xl mx-auto leading-relaxed mt-2">
+                حلول رقمية متطورة لكشف وتتبع التهديدات السيبرانية، الروابط الخبيثة، والرسائل الاحتيالية مع تشريح البصمة البرمجية للصور.
+            </p>
+        </section>
+
+        <!-- الإحصائيات -->
+        <section id="stats-section" class="grid grid-cols-2 md:grid-cols-4 gap-5">
+            <div class="glass-panel border-cyan-500/10 p-6 rounded-2xl text-center hover:border-cyan-500/40 transition duration-500 group">
+                <div class="text-cyan-400 text-3xl mb-2 group-hover:scale-110 transition duration-300"><i class="fa-solid fa-server"></i></div>
+                <div id="stat-total" class="text-3xl font-extrabold text-white">0</div>
+                <div class="text-slate-500 text-xs mt-1 font-semibold uppercase tracking-wider">إجمالي الفحوصات</div>
+            </div>
+            <div class="glass-panel border-emerald-500/10 p-6 rounded-2xl text-center hover:border-emerald-500/40 transition duration-500 group">
+                <div class="text-emerald-400 text-3xl mb-2 group-hover:scale-110 transition duration-300"><i class="fa-solid fa-shield-halved"></i></div>
+                <div id="stat-safe" class="text-3xl font-extrabold text-white">0</div>
+                <div class="text-slate-500 text-xs mt-1 font-semibold uppercase tracking-wider">سليمة وآمنة</div>
+            </div>
+            <div class="glass-panel border-rose-500/10 p-6 rounded-2xl text-center hover:border-rose-500/40 transition duration-500 group">
+                <div class="text-rose-400 text-3xl mb-2 group-hover:scale-110 transition duration-300"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div id="stat-danger" class="text-3xl font-extrabold text-white">0</div>
+                <div class="text-slate-500 text-xs mt-1 font-semibold uppercase tracking-wider">تهديدات معزولة</div>
+            </div>
+            <div class="glass-panel border-purple-500/10 p-6 rounded-2xl text-center hover:border-purple-500/40 transition duration-500 group">
+                <div class="text-purple-400 text-3xl mb-2 group-hover:scale-110 transition duration-300"><i class="fa-solid fa-bolt"></i></div>
+                <div id="stat-ratio" class="text-3xl font-extrabold text-white">0%</div>
+                <div class="text-slate-500 text-xs mt-1 font-semibold uppercase tracking-wider">معدل التهديد العام</div>
+            </div>
+        </section>
+        </div>
+        <!-- ================= /صفحة: الرئيسية ================= -->
+
+        <!-- ================= صفحة: أدوات الفحص ================= -->
+        <div id="page-scan" class="page space-y-12">
+        <!-- لوحة أدوات الفحص -->
+        <section id="scanner" class="glass-panel rounded-3xl p-6 md:p-8 pulse-neon relative">
+            <!-- مؤشر التحميل الذكي التفاعلي أثناء الفحص -->
+            <div id="scan-overlay">
+                <div class="scan-ring"></div>
+                <div id="scan-stage-text" class="scan-stage-text font-orbitron">جاري التهيئة...</div>
+                <div class="scan-progress-track">
+                    <div id="scan-progress-fill" class="scan-progress-fill"></div>
+                </div>
+            </div>
+
+            <div class="flex border-b border-slate-800 mb-8 gap-2">
+                <button onclick="switchTab('url-tab')" id="btn-url-tab" class="tab-btn pb-3 px-6 text-cyan-400 border-b-2 border-cyan-500 font-bold focus:outline-none transition duration-300 neon-text-cyan">
+                    <i class="fa-solid fa-circle-nodes ml-2"></i>تحليل رابط (URL)
+                </button>
+                <button onclick="switchTab('text-tab')" id="btn-text-tab" class="tab-btn pb-3 px-6 text-slate-400 border-b-2 border-transparent hover:text-slate-200 focus:outline-none transition duration-300">
+                    <i class="fa-solid fa-code-compare ml-2"></i>فحص الرسائل
+                </button>
+                <button onclick="switchTab('image-tab')" id="btn-image-tab" class="tab-btn pb-3 px-6 text-slate-400 border-b-2 border-transparent hover:text-slate-200 focus:outline-none transition duration-300">
+                    <i class="fa-solid fa-camera-retro ml-2"></i>الصور (ميتاداتا + AI)
+                </button>
+                <button onclick="switchTab('password-tab')" id="btn-password-tab" class="tab-btn pb-3 px-6 text-slate-400 border-b-2 border-transparent hover:text-slate-200 focus:outline-none transition duration-300">
+                    <i class="fa-solid fa-key ml-2"></i>قوة كلمة السر
+                </button>
+            </div>
+
+            <div id="url-tab" class="tab-content space-y-4">
+                <div class="space-y-2">
+                    <label class="block text-slate-400 text-sm font-semibold">مسار الرابط المطلوب تشريحه فنيّاً:</label>
+                    <div class="flex flex-col md:flex-row gap-3">
+                        <input type="text" id="url-input" placeholder="https://external-unknown-node.com" class="bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3.5 flex-grow focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 text-left text-cyan-300 placeholder-slate-700" dir="ltr">
+                        <button onclick="scanURL()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(123, 184, 238,0.4)]">
+                            <i class="fa-solid fa-fingerprint"></i> بدء التشريح الرقمي
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="text-tab" class="tab-content hidden space-y-4">
+                <div class="space-y-2">
+                    <label class="block text-slate-400 text-sm font-semibold">محتوى النص المراد معالجته لغوياً:</label>
+                    <textarea id="text-input" rows="4" placeholder="مثال: عزيزي العميل، تم تجميد حسابك البنكي..." class="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-4 focus:outline-none focus:border-cyan-500 text-slate-300"></textarea>
+                    <button onclick="scanText()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2">
+                        <i class="fa-solid fa-brain"></i> فك البصمة اللغوية
+                    </button>
+                </div>
+            </div>
+
+            <div id="image-tab" class="tab-content hidden space-y-4">
+                <div class="space-y-2">
+                    <label class="block text-slate-400 text-sm font-semibold">تحميل صورة لفحص الميتاداتا EXIF، ومطابقة بصمتها مع VirusTotal، وتحليل أي نص داخلها بالذكاء الاصطناعي (OCR) لرصد انتحال الجهات الرسمية:</label>
+                    <div class="border border-dashed border-slate-800 rounded-xl p-8 text-center bg-slate-950/50 hover:bg-slate-950 hover:border-cyan-500/50 transition duration-300 relative group">
+                        <input type="file" id="image-input" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="displayFileName()">
+                        <i class="fa-solid fa-circle-nodes text-slate-700 text-4xl mb-3 group-hover:text-cyan-500 transition duration-300"></i>
+                        <p class="text-slate-300 font-semibold text-sm" id="file-label">اسحب ملف الصورة أو انقر للتصفح</p>
+                    </div>
+                    <button onclick="scanImage()" class="bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2">
+                        <i class="fa-solid fa-radar"></i> فحص الصورة بالكامل
+                    </button>
+                </div>
+            </div>
+
+            <div id="password-tab" class="tab-content hidden space-y-5">
+                <div class="space-y-2">
+                    <label class="block text-slate-400 text-sm font-semibold">أدخل كلمة السر لتقييم مدى قوتها وصعوبة اختراقها:</label>
+                    <div class="relative">
+                        <input type="password" id="password-input" oninput="analyzePasswordLive()" placeholder="••••••••••••" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3.5 pl-12 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 text-left text-cyan-300 placeholder-slate-700 font-mono" dir="ltr" autocomplete="new-password" spellcheck="false">
+                        <button type="button" onclick="togglePasswordVisibility()" id="pw-toggle-btn" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center justify-between flex-wrap gap-2">
+                        <p class="text-[11px] text-emerald-500/80 flex items-center gap-1.5">
+                            <i class="fa-solid fa-lock"></i> هذا الفحص يتم بالكامل داخل متصفحك — كلمة السر لا تُرسل أبداً لأي خادم.
+                        </p>
+                        <p id="pw-db-status" class="text-[11px] text-slate-600 flex items-center gap-1.5">
+                            <i class="fa-solid fa-database"></i> جاري تحميل قاعدة الكلمات الشائعة...
+                        </p>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-500 uppercase tracking-wider">مستوى القوة</span>
+                        <span id="pw-strength-label" class="text-xs font-black">-</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-slate-950 border border-slate-800 rounded-full overflow-hidden">
+                        <div id="pw-strength-bar" class="h-full rounded-full transition-all duration-300" style="width: 0%; background: #4C5266;"></div>
+                    </div>
+                    <div class="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>نسبة القوة: <span id="pw-strength-percent" class="text-slate-300 font-bold">0%</span></span>
+                        <span>الإنتروبيا (Entropy): <span id="pw-entropy" class="text-slate-300 font-bold font-mono" dir="ltr">0 bits</span></span>
+                    </div>
+                </div>
+
+                <!-- جدول زمن الكسر لعدة سيناريوهات هجوم -->
+                <div class="bg-slate-950/60 border border-indigo-500/20 rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center gap-2 text-indigo-300 text-xs font-bold">
+                        <i class="fa-solid fa-stopwatch"></i> الوقت التقريبي اللازم لكسرها (بحسب نوع الهجوم):
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2" id="pw-crack-scenarios">
+                        <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">تخمين عبر الإنترنت (مُقيّد)</div>
+                            <div id="pw-crack-online" class="text-sm font-black text-emerald-400 font-orbitron">-</div>
+                        </div>
+                        <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">تسريب + تجزئة بطيئة (bcrypt)</div>
+                            <div id="pw-crack-offline-slow" class="text-sm font-black text-amber-400 font-orbitron">-</div>
+                        </div>
+                        <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">تسريب + كسر بمعالج GPU سريع</div>
+                            <div id="pw-crack-offline-fast" class="text-sm font-black text-rose-400 font-orbitron">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <ul id="pw-criteria-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs"></ul>
+
+                <!-- المشاكل المكتشفة تحديداً -->
+                <div id="pw-issues-box" class="hidden bg-rose-950/20 border border-rose-500/30 rounded-2xl p-4 space-y-2">
+                    <div class="text-xs font-bold text-rose-300 flex items-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation"></i> مشاكل محددة تم رصدها:
+                    </div>
+                    <ul id="pw-issues-list" class="text-xs text-rose-200/80 space-y-1.5 list-none"></ul>
+                </div>
+
+                <!-- اقتراحات التحسين -->
+                <div id="pw-suggestions-box" class="hidden bg-cyan-950/20 border border-cyan-500/30 rounded-2xl p-4 space-y-2">
+                    <div class="text-xs font-bold text-cyan-300 flex items-center gap-2">
+                        <i class="fa-solid fa-lightbulb"></i> اقتراحات لتحسين كلمة السر:
+                    </div>
+                    <ul id="pw-suggestions-list" class="text-xs text-cyan-200/80 space-y-1.5 list-none"></ul>
+                </div>
+
+                <!-- مولّد كلمات مرور قوية -->
+                <div class="border-t border-slate-800 pt-5 space-y-4">
+                    <div class="flex items-center gap-2 text-white font-bold text-sm">
+                        <i class="fa-solid fa-wand-magic-sparkles text-purple-400"></i> مولّد كلمات سر قوية عشوائياً
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="pw-gen-output" readonly placeholder="اضغط «توليد» لإنشاء كلمة سر قوية" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3.5 focus:outline-none focus:border-purple-500 text-left text-emerald-300 placeholder-slate-700 font-mono text-sm" dir="ltr">
+                        <button type="button" onclick="copyGeneratedPassword()" id="pw-gen-copy-btn" title="نسخ" class="bg-slate-900 border border-slate-800 hover:border-purple-500 text-slate-400 hover:text-purple-300 w-12 h-12 shrink-0 rounded-xl flex items-center justify-center transition">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                        <div class="space-y-1.5">
+                            <div class="flex items-center justify-between text-xs text-slate-400">
+                                <span>طول كلمة السر</span>
+                                <span id="pw-gen-length-label" class="text-purple-300 font-bold font-mono">16</span>
+                            </div>
+                            <input type="range" id="pw-gen-length" min="8" max="64" value="16" oninput="document.getElementById('pw-gen-length-label').innerText = this.value" class="w-full accent-purple-500">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs text-slate-400">
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="pw-gen-upper" checked class="accent-purple-500"> أحرف كبيرة (A-Z)</label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="pw-gen-lower" checked class="accent-purple-500"> أحرف صغيرة (a-z)</label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="pw-gen-digits" checked class="accent-purple-500"> أرقام (0-9)</label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="pw-gen-symbols" checked class="accent-purple-500"> رموز (!@#$...)</label>
+                            <label class="flex items-center gap-2 cursor-pointer col-span-2"><input type="checkbox" id="pw-gen-exclude-ambiguous" class="accent-purple-500"> استبعاد الأحرف المتشابهة (0/O، 1/l/I)</label>
+                        </div>
+                    </div>
+
+                    <button type="button" onclick="generateStrongPassword()" class="bg-purple-600 hover:bg-purple-500 text-white px-8 py-3.5 rounded-xl font-black transition duration-300 flex items-center gap-2 w-full md:w-auto justify-center">
+                        <i class="fa-solid fa-dice"></i> توليد كلمة سر قوية
+                    </button>
+                    <p id="pw-gen-error" class="hidden text-[11px] text-rose-400"></p>
+                </div>
+            </div>
+
+            <!-- نتائج الفحص -->
+            <div id="result-box" class="hidden mt-10 border-t border-slate-800 pt-8 space-y-4">
+                <div class="flex items-center justify-between flex-wrap gap-3">
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <span class="w-1.5 h-4 bg-cyan-400 rounded-full"></span> تقرير التشخيص الفني:
+                    </h3>
+                    <button onclick="downloadReport()" class="bg-slate-900 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 px-4 py-2 rounded-xl text-xs font-black tracking-wider transition duration-300 flex items-center gap-2">
+                        <i class="fa-solid fa-file-shield"></i> تحميل التقرير المحمي
+                    </button>
+                </div>
+
+                <!-- سلسلة إعادة التوجيه لفك الروابط المختصرة -->
+                <div id="redirect-chain-box" class="hidden bg-slate-950/60 border border-indigo-500/20 rounded-2xl p-4 space-y-2">
+                    <div class="text-xs text-indigo-300 font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-diagram-project"></i> مسار فك تشفير الرابط المختصر:
+                    </div>
+                    <ul id="redirect-chain-list" class="text-[11px] text-slate-400 space-y-1 font-mono" dir="ltr"></ul>
+                </div>
+
+                <div id="result-card" class="p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-500 uppercase tracking-wider">سلامة العنصر:</span>
+                            <span id="res-status" class="px-3 py-1 rounded-full text-xs font-bold">انتظار البيانات</span>
+                        </div>
+                        <div class="text-slate-300 text-sm font-semibold">تفاصيل الكشف:</div>
+                        <ul id="res-reasons" class="list-none text-sm text-slate-400 space-y-2"></ul>
+
+                        <!-- الإبلاغ المجتمعي عن رابط احتيالي -->
+                        <div id="report-domain-box" class="hidden pt-2">
+                            <button onclick="reportCurrentDomain()" id="report-domain-btn" class="bg-rose-950/30 border border-rose-500/30 hover:border-rose-400 text-rose-300 px-4 py-2 rounded-xl text-xs font-bold transition duration-300 flex items-center gap-2">
+                                <i class="fa-solid fa-flag"></i> أبلغ عن هذا الرابط كاحتيال
+                            </button>
+                            <p id="report-domain-feedback" class="text-[11px] text-slate-500 mt-2"></p>
+                        </div>
+                    </div>
+                    <div class="text-center bg-slate-950 border p-6 rounded-2xl shrink-0 min-w-[170px] relative overflow-hidden group">
+                        <span class="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">نسبة التهديد</span>
+                        <span id="res-score" class="text-4xl font-black text-cyan-400 neon-text-cyan">0%</span>
+                        <div class="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 to-indigo-500"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        </div>
+        <!-- ================= /صفحة: أدوات الفحص ================= -->
+
+        <!-- ================= صفحة: محاكي التصيّد ================= -->
+        <div id="page-simulator" class="page space-y-12">
+        <!-- محاكي هجمات التصيّد التعليمي -->
+        <section id="simulator" class="glass-panel rounded-3xl p-6 md:p-8 border-purple-500/20">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                <div>
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-950/50 border border-purple-500/30 text-purple-300 text-[11px] font-bold mb-3">
+                        <i class="fa-solid fa-graduation-cap"></i> تدريب توعوي تفاعلي
+                    </div>
+                    <h2 class="text-2xl md:text-3xl font-black text-white font-orbitron neon-text-purple neon-flicker">PHISHING SIMULATOR</h2>
+                    <p class="text-slate-400 text-sm mt-2 max-w-xl">اختبر قدرتك على كشف رسائل التصيّد الوهمية. حدّد لكل رسالة هل هي <span class="text-emerald-400 font-bold">حقيقية</span> أم <span class="text-rose-400 font-bold">تصيّد احتيالي</span>، بدون أي خطر فعلي.</p>
+                </div>
+                <div class="text-center bg-slate-950/80 border border-purple-500/30 p-5 rounded-2xl shrink-0 min-w-[140px]">
+                    <div class="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1">نتيجتك</div>
+                    <div><span id="sim-score" class="text-3xl font-black text-purple-400 neon-text-purple">0</span><span class="text-slate-600 text-lg"> / <span id="sim-total">0</span></span></div>
+                </div>
+            </div>
+
+            <div id="sim-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-5"></div>
+
+            <div class="text-center mt-8">
+                <button onclick="resetSimulator()" class="bg-purple-950/50 border border-purple-500/40 hover:bg-purple-900/50 text-purple-300 px-6 py-3 rounded-xl text-xs font-black tracking-wider transition duration-300">
+                    <i class="fa-solid fa-rotate ml-2"></i> إعادة تشغيل المحاكاة
+                </button>
+            </div>
+        </section>
+        </div>
+        <!-- ================= /صفحة: محاكي التصيّد ================= -->
+
+        <!-- ================= صفحة: AUTH - المساعد الأمني ================= -->
+        <div id="page-assistant" class="page">
+        <section id="assistant" class="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-900/40 border border-slate-800 rounded-3xl p-6 md:p-8">
+            <div class="md:col-span-1 space-y-4 flex flex-col justify-center">
+                <div class="text-purple-400 text-4xl"><i class="fa-solid fa-shield-cat"></i></div>
+                <h3 class="text-2xl font-black text-white neon-text-purple font-orbitron">AUTH</h3>
+                <p class="text-slate-500 text-xs -mt-3 uppercase tracking-widest font-bold">RAQEEB · Security Advisor</p>
+                <p class="text-slate-400 text-sm leading-relaxed">مساعدك الأمني الرقمي المدمج. اسأل AUTH عن أي رابط أو رسالة، أو أخبره فوراً إن كنت تمر بحالة طارئة.</p>
+            </div>
+            <div class="md:col-span-2 flex flex-col h-[420px] bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-inner">
+                <div id="chat-box" class="flex-grow p-4 overflow-y-auto space-y-4 text-xs md:text-sm">
+                    <div class="bg-slate-900/60 border border-slate-800 text-slate-300 p-3.5 rounded-2xl rounded-tr-none max-w-[85%] leading-relaxed shadow-sm">
+                         مرحباً، أنا <b class="text-purple-300">AUTH</b> 🛡️ — مساعدك الأمني بمنصة Smart Verify. اسألني عن أي رابط أو رسالة، أو أخبرني فوراً إن كنت تمر بحالة طارئة.
+                    </div>
+                </div>
+                <div class="p-3 border-t border-slate-800/80 flex gap-2 bg-slate-950/40">
+                    <input type="text" id="chat-input" placeholder="اكتب سؤالك لـ AUTH هنا..." class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex-grow focus:outline-none focus:border-purple-500 text-slate-300 text-sm">
+                    <button onclick="sendChatMessage()" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl text-sm font-black transition duration-300">إرسال</button>
+                </div>
+            </div>
+        </section>
+        </div>
+        <!-- ================= /صفحة: AUTH ================= -->
+
+    </main>
+    </div>
+    <!-- إغلاق الحاوية المرنة (sidebar + main) -->
+
+    <footer class="border-t border-slate-900 bg-slate-950 py-6 text-center text-slate-600 text-[11px] tracking-wider uppercase">
+        <p>© 2026 Smart Verify. جميع الحقوق والعمليات التشغيلية مشفرة ومحمية.</p>
+    </footer>
+
+    <script>
+        // ============================================================
+        //  التنقل بين الصفحات (Sidebar SPA Navigation)
+        // ============================================================
+        function showPage(pageId) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+
+            const target = document.getElementById(pageId);
+            if (target) target.classList.add('active');
+
+            const link = document.querySelector(`.sidebar-link[data-page="${pageId}"]`);
+            if (link) link.classList.add('active');
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            history.replaceState(null, '', '#' + pageId);
+
+            // إغلاق القائمة الجانبية تلقائياً بعد الاختيار على الجوال
+            if (window.innerWidth < 768) toggleSidebar(false);
+        }
+
+        let sidebarPinned = false; // يبقى مفتوحاً إذا تم فتحه عبر زر التبديل (وليس بمجرد التمرير عليه)
+
+        function toggleSidebar(forceState) {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            const shouldOpen = forceState !== undefined ? forceState : !sidebar.classList.contains('mobile-open');
+            sidebarPinned = shouldOpen;
+            sidebar.classList.toggle('mobile-open', shouldOpen);
+            if (window.innerWidth < 768) backdrop.classList.toggle('hidden', !shouldOpen);
+        }
+
+        // ============================================================
+        //  إظهار/إخفاء القائمة الجانبية تلقائياً عند الاقتراب منها بالماوس
+        // ============================================================
+        (function initSidebarAutoHide() {
+            const sidebar = document.getElementById('sidebar');
+            const hoverZone = document.getElementById('sidebar-hover-zone');
+            const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+            if (isTouchDevice || !sidebar || !hoverZone) return; // على الجوال يُستخدم الزر فقط
+
+            let closeTimer = null;
+
+            function openOnHover() {
+                clearTimeout(closeTimer);
+                sidebar.classList.add('mobile-open');
+            }
+
+            function scheduleClose() {
+                clearTimeout(closeTimer);
+                closeTimer = setTimeout(() => {
+                    if (!sidebarPinned) sidebar.classList.remove('mobile-open');
+                }, 350);
+            }
+
+            [hoverZone, sidebar].forEach(el => {
+                el.addEventListener('mouseenter', openOnHover);
+                el.addEventListener('mouseleave', scheduleClose);
+            });
+        })();
+
+        // ============================================================
+        //  أثر المسح الأمني (Radar Scan Trail) يتبع الماوس
+        // ============================================================
+        (function initRadarTrail() {
+            const canvas = document.getElementById('radar-canvas');
+            const ctx = canvas.getContext('2d');
+            let width, height;
+            let rings = [];
+            let lastPing = 0;
+            let mouseX = -999, mouseY = -999;
+
+            function resize() {
+                width = canvas.width = window.innerWidth;
+                height = canvas.height = window.innerHeight;
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            // تجاهل الأجهزة اللمسية (لا يوجد ماوس فعلي)
+            const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+            if (isTouchDevice) return;
+
+            window.addEventListener('mousemove', (e) => {
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+                const now = performance.now();
+                if (now - lastPing > 90) {
+                    rings.push({ x: mouseX, y: mouseY, r: 2, alpha: 0.55, born: now });
+                    lastPing = now;
+                    if (rings.length > 12) rings.shift();
+                }
+            });
+
+            function draw() {
+                ctx.clearRect(0, 0, width, height);
+
+                // حلقات المسح المتلاشية (Ping trail)
+                rings.forEach(ring => {
+                    ring.r += 1.1;
+                    ring.alpha *= 0.94;
+                    if (ring.alpha < 0.02) return;
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(123, 184, 238, ${ring.alpha})`;
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                });
+                rings = rings.filter(r => r.alpha >= 0.02);
+
+                // مؤشر رادار دائم يتبع الماوس مع خط مسح دوّار
+                if (mouseX > -900) {
+                    const t = performance.now() / 700;
+                    ctx.beginPath();
+                    ctx.arc(mouseX, mouseY, 16, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(123, 184, 238, 0.35)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
+                    ctx.save();
+                    ctx.translate(mouseX, mouseY);
+                    ctx.rotate(t);
+                    const grad = ctx.createLinearGradient(0, 0, 16, 0);
+                    grad.addColorStop(0, 'rgba(123, 184, 238, 0.9)');
+                    grad.addColorStop(1, 'rgba(123, 184, 238, 0)');
+                    ctx.strokeStyle = grad;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(16, 0);
+                    ctx.stroke();
+                    ctx.restore();
+
+                    ctx.beginPath();
+                    ctx.arc(mouseX, mouseY, 2, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(123, 184, 238, 0.9)';
+                    ctx.fill();
+                }
+
+                requestAnimationFrame(draw);
+            }
+            requestAnimationFrame(draw);
+        })();
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('text-cyan-400', 'border-cyan-500', 'neon-text-cyan');
+                btn.classList.add('text-slate-400', 'border-transparent');
+            });
+            document.getElementById(tabId).classList.remove('hidden');
+            const activeBtn = document.getElementById('btn-' + tabId);
+            activeBtn.classList.remove('text-slate-400', 'border-transparent');
+            activeBtn.classList.add('text-cyan-400', 'border-cyan-500', 'neon-text-cyan');
+        }
+
+        function displayFileName() {
+            const input = document.getElementById('image-input');
+            const label = document.getElementById('file-label');
+            if(input.files.length > 0) {
+                label.innerText = `الملف المرفق: ${input.files[0].name}`;
+                label.classList.add('text-cyan-400');
+            }
+        }
+
+        async function refreshStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                document.getElementById('stat-total').innerText = data.total_scans;
+                document.getElementById('stat-safe').innerText = data.safe_count;
+                document.getElementById('stat-danger').innerText = data.danger_count;
+                const ratio = data.total_scans > 0 ? Math.round((data.danger_count / data.total_scans) * 100) : 0;
+                document.getElementById('stat-ratio').innerText = ratio + "%";
+            } catch(e) { console.error("Error updating stats", e); }
+        }
+
+        // يحفظ آخر نتيجة فحص لاستخدامها عند توليد التقرير القابل للتحميل
+        let lastScanReport = null;
+        let lastScannedUrlForReport = null;
+
+        function displayResults(status, riskScore, reasons, meta) {
+            meta = meta || {};
+            const resultBox = document.getElementById('result-box');
+            const resStatus = document.getElementById('res-status');
+            const resScore = document.getElementById('res-score');
+            const resReasons = document.getElementById('res-reasons');
+            const resultCard = document.getElementById('result-card');
+            const chainBox = document.getElementById('redirect-chain-box');
+            const chainList = document.getElementById('redirect-chain-list');
+            const reportBox = document.getElementById('report-domain-box');
+            const reportFeedback = document.getElementById('report-domain-feedback');
+            const reportBtn = document.getElementById('report-domain-btn');
+
+            resultBox.classList.remove('hidden');
+            resStatus.innerText = status;
+            resScore.innerText = riskScore + "%";
+
+            resReasons.innerHTML = '';
+            reasons.forEach(r => {
+                const li = document.createElement('li');
+                li.className = "flex items-start gap-2 text-slate-400 text-xs md:text-sm";
+                li.innerHTML = `<span class="text-cyan-500 mt-1">✦</span> <span>${r}</span>`;
+                resReasons.appendChild(li);
+            });
+
+            // زر الإبلاغ المجتمعي يظهر فقط لفحوصات الروابط
+            if (meta.reportUrl) {
+                lastScannedUrlForReport = meta.reportUrl;
+                reportBox.classList.remove('hidden');
+                reportFeedback.innerText = '';
+                reportBtn.disabled = false;
+                reportBtn.classList.remove('opacity-50');
+            } else {
+                reportBox.classList.add('hidden');
+                lastScannedUrlForReport = null;
+            }
+
+            // عرض سلسلة إعادة التوجيه إذا كان الرابط مختصراً وتم فك تشفيره
+            if (meta.redirect_chain && meta.redirect_chain.length > 1) {
+                chainBox.classList.remove('hidden');
+                chainList.innerHTML = '';
+                meta.redirect_chain.forEach((step, idx) => {
+                    const li = document.createElement('li');
+                    li.className = "flex items-center gap-2";
+                    const arrow = idx > 0 ? '<i class="fa-solid fa-arrow-left text-indigo-500"></i>' : '<i class="fa-solid fa-flag text-cyan-500"></i>';
+                    li.innerHTML = `${arrow} <span class="${idx === meta.redirect_chain.length - 1 ? 'text-indigo-300 font-bold' : ''}">${step}</span>`;
+                    chainList.appendChild(li);
+                });
+            } else {
+                chainBox.classList.add('hidden');
+            }
+
+            if (riskScore >= 50) {
+                resStatus.className = "px-3 py-1 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30";
+                resScore.className = "text-4xl font-black text-rose-500";
+                resultCard.className = "p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-rose-950/20 border border-rose-500/20";
+            } else {
+                resStatus.className = "px-3 py-1 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                resScore.className = "text-4xl font-black text-emerald-400";
+                resultCard.className = "p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-emerald-950/20 border border-emerald-500/20";
+            }
+
+            // حفظ بيانات التقرير لاستخدامها عند التحميل
+            lastScanReport = {
+                type: meta.scanType || 'غير محدد',
+                subject: meta.subject || '',
+                status: status,
+                riskScore: riskScore,
+                reasons: reasons,
+                redirectChain: meta.redirect_chain || null,
+                timestamp: new Date().toISOString()
+            };
+
+            refreshStats();
+            resultBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // ===== الإبلاغ المجتمعي عن نطاق احتيالي =====
+        async function reportCurrentDomain() {
+            if (!lastScannedUrlForReport) return;
+            const btn = document.getElementById('report-domain-btn');
+            const feedback = document.getElementById('report-domain-feedback');
+            const gUser = getCurrentGoogleUser();
+
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            feedback.innerText = 'جاري إرسال البلاغ...';
+
+            try {
+                const res = await fetch('/api/report-domain', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        url: lastScannedUrlForReport,
+                        user_email: gUser ? gUser.email : null
+                    })
+                });
+                const data = await res.json();
+                feedback.innerText = data.message || 'تم إرسال البلاغ.';
+                if (!data.success) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50');
+                }
+            } catch (e) {
+                feedback.innerText = 'تعذّر إرسال البلاغ، حاول مرة أخرى لاحقاً.';
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+            }
+        }
+
+        // ===== توليد بصمة تحقق (SHA-256) لحماية التقرير من التلاعب =====
+        async function generateIntegrityHash(text) {
+            try {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(text);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            } catch (e) {
+                return 'غير متوفر (المتصفح لا يدعم واجهة التشفير)';
+            }
+        }
+
+        async function downloadReport() {
+            if (!lastScanReport) { alert("لا توجد نتيجة فحص لتحميلها بعد!"); return; }
+
+            const r = lastScanReport;
+            let body = "";
+            body += "==================================================\n";
+            body += "           تقرير التشخيص الفني - Smart Verify\n";
+            body += "==================================================\n\n";
+            body += `نوع الفحص       : ${r.type}\n`;
+            if (r.subject) body += `العنصر المفحوص   : ${r.subject}\n`;
+            body += `تاريخ الفحص      : ${new Date(r.timestamp).toLocaleString('ar-EG')}\n`;
+            body += `الحالة النهائية   : ${r.status}\n`;
+            body += `نسبة التهديد     : ${r.riskScore}%\n\n`;
+            body += "--------------------------------------------------\n";
+            body += "تفاصيل الكشف:\n";
+            r.reasons.forEach((reason, i) => { body += `  ${i + 1}. ${reason}\n`; });
+
+            if (r.redirectChain && r.redirectChain.length > 1) {
+                body += "\n--------------------------------------------------\n";
+                body += "مسار فك تشفير الرابط المختصر:\n";
+                r.redirectChain.forEach((step, i) => { body += `  ${i + 1}) ${step}\n`; });
+            }
+
+            body += "\n--------------------------------------------------\n";
+            body += "هذا التقرير محمي بختم تحقق رقمي (SHA-256) لضمان عدم التلاعب بمحتواه بعد إصداره.\n";
+
+            const integrityHash = await generateIntegrityHash(body);
+            body += `رمز التحقق (Integrity Hash): ${integrityHash}\n`;
+            body += "==================================================\n";
+
+            const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            a.href = url;
+            a.download = `SmartVerify-Report-${stamp}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // ===== مؤشر التحميل الذكي التفاعلي أثناء الفحص =====
+        const SCAN_STAGES = {
+            url: ["فك تشفير الروابط المختصرة...", "مطابقة القائمة السوداء المحلية...", "التحقق من شهادة SSL...", "تحليل الكلمات الدلالية للتصيد...", "احتساب نسبة التهديد النهائية..."],
+            text: ["تحليل البنية اللغوية للنص...", "مطابقة أنماط الاحتيال المعروفة...", "فحص مؤشرات الهندسة الاجتماعية...", "احتساب نسبة التهديد النهائية..."],
+            image: ["قراءة بيانات الميتاداتا EXIF...", "فحص بصمة برنامج التحرير...", "تحليل تكامل بنية الملف...", "احتساب نسبة التهديد النهائية..."]
+        };
+        let scanOverlayInterval = null;
+
+        function startScanOverlay(kind) {
+            const overlay = document.getElementById('scan-overlay');
+            const stageText = document.getElementById('scan-stage-text');
+            const fill = document.getElementById('scan-progress-fill');
+            const stages = SCAN_STAGES[kind] || SCAN_STAGES.url;
+            let idx = 0;
+
+            overlay.classList.add('active');
+            fill.style.width = '5%';
+            stageText.innerText = stages[0];
+
+            clearInterval(scanOverlayInterval);
+            scanOverlayInterval = setInterval(() => {
+                idx = Math.min(idx + 1, stages.length - 1);
+                stageText.innerText = stages[idx];
+                const pct = Math.min(((idx + 1) / stages.length) * 92, 92);
+                fill.style.width = pct + '%';
+            }, 650);
+        }
+
+        function stopScanOverlay() {
+            const overlay = document.getElementById('scan-overlay');
+            const fill = document.getElementById('scan-progress-fill');
+            clearInterval(scanOverlayInterval);
+            fill.style.width = '100%';
+            setTimeout(() => {
+                overlay.classList.remove('active');
+                fill.style.width = '0%';
+            }, 300);
+        }
+
+        // يعيد بيانات المستخدم الحالي إذا كان مسجلاً بحساب Google (سجل التحقق مرتبط بهذا الحساب فقط)
+        function getCurrentGoogleUser() {
+            try {
+                const raw = localStorage.getItem('googleUser');
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) { return null; }
+        }
+
+        async function scanURL() {
+            const urlInput = document.getElementById('url-input').value.trim();
+            if(!urlInput) return alert("الرجاء توفير الرابط أولاً ليتم التحليل!");
+            startScanOverlay('url');
+            try {
+                const gUser = getCurrentGoogleUser();
+                const res = await fetch('/api/scan-url', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        url: urlInput,
+                        user_email: gUser ? gUser.email : null,
+                        user_name: gUser ? gUser.name : null
+                    })
+                });
+                const data = await res.json();
+                stopScanOverlay();
+
+                if (data.status === 'غير صالح') {
+                    alert(data.reasons && data.reasons[0] ? data.reasons[0] : "المُدخل ليس رابطاً صالحاً.");
+                    return;
+                }
+
+                displayResults(data.status, data.risk_score, data.reasons, {
+                    scanType: 'فحص رابط (URL)',
+                    subject: data.original_url || urlInput,
+                    redirect_chain: data.was_expanded ? data.redirect_chain : null,
+                    reportUrl: data.url || urlInput
+                });
+            } catch(e) { stopScanOverlay(); alert("فشل الاتصال بخادم المعالجة الأساسي"); }
+        }
+
+        async function scanText() {
+            const textInput = document.getElementById('text-input').value.trim();
+            if(!textInput) return alert("الرجاء توفير الرسالة أولاً!");
+            startScanOverlay('text');
+            try {
+                const gUser = getCurrentGoogleUser();
+                const res = await fetch('/api/scan-text', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        text: textInput,
+                        user_email: gUser ? gUser.email : null,
+                        user_name: gUser ? gUser.name : null
+                    })
+                });
+                const data = await res.json();
+                stopScanOverlay();
+                displayResults(data.status, data.risk_score, data.reasons, {
+                    scanType: 'فحص رسالة نصية',
+                    subject: textInput.length > 80 ? textInput.slice(0, 80) + '...' : textInput
+                });
+            } catch(e) { stopScanOverlay(); alert("فشل الاتصال بخادم المعالجة الأساسي"); }
+        }
+
+        async function scanImage() {
+            const fileInput = document.getElementById('image-input');
+            if(fileInput.files.length === 0) return alert("الرجاء إرفاق ملف الصورة!");
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+            const gUser = getCurrentGoogleUser();
+            if (gUser) {
+                formData.append("user_email", gUser.email);
+                formData.append("user_name", gUser.name);
+            }
+            startScanOverlay('image');
+            try {
+                const res = await fetch('/api/scan-image', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                stopScanOverlay();
+                displayResults(data.status, data.risk_score, data.reasons, {
+                    scanType: 'فحص ميتاداتا صورة',
+                    subject: fileInput.files[0].name
+                });
+            } catch(e) { stopScanOverlay(); alert("حدث خطأ أثناء فحص ميتاداتا الصورة"); }
+        }
+
+        async function sendChatMessage() {
+            const chatInput = document.getElementById('chat-input');
+            const msg = chatInput.value.trim();
+            if(!msg) return;
+
+            const chatBox = document.getElementById('chat-box');
+            const userDiv = document.createElement('div');
+            userDiv.className = "bg-purple-600 text-white p-3.5 rounded-2xl rounded-tl-none max-w-[85%] mr-auto text-left shadow-md font-semibold";
+            userDiv.innerText = msg;
+            chatBox.appendChild(userDiv);
+            chatInput.value = '';
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg})
+                });
+                const data = await res.json();
+                const serverDiv = document.createElement('div');
+
+                if (data.type === 'emergency') {
+                    serverDiv.className = "chat-emergency text-slate-200 p-4 rounded-2xl rounded-tr-none max-w-[92%] leading-relaxed";
+                    let stepsHtml = '<div class="chat-emergency-title text-sm mb-2">' + data.title + '</div><ol class="space-y-1.5 text-xs md:text-sm list-none">';
+                    (data.steps || []).forEach((s, i) => {
+                        stepsHtml += `<li class="flex items-start gap-2"><span class="text-rose-400 font-black shrink-0">${i + 1}.</span><span>${s}</span></li>`;
+                    });
+                    stepsHtml += '</ol>';
+                    serverDiv.innerHTML = stepsHtml;
+                } else {
+                    serverDiv.className = "bg-slate-900/80 border border-slate-800 text-slate-300 p-3.5 rounded-2xl rounded-tr-none max-w-[85%] leading-relaxed";
+                    serverDiv.innerText = data.reply;
+                }
+
+                chatBox.appendChild(serverDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } catch(e) { console.error("خطأ بالاتصال بالبوت", e); }
+        }
+
+        // --- وظائف نظام تسجيل الدخول المنفصل لـ جوجل وواتساب ---
+        function openLoginModal() {
+            document.getElementById('login-modal').classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        function closeLoginModal() {
+            document.getElementById('login-modal').classList.add('opacity-0', 'pointer-events-none');
+        }
+
+        // دالة معالجة التوكن الراجع من جوجل بعد نجاح المصادقة
+        async function handleCredentialResponse(response) {
+            try {
+                const res = await fetch('/api/auth/google', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ credential: response.credential })
+                });
+                const data = await res.json();
+                if(data.success) {
+                    localStorage.setItem('googleUser', JSON.stringify(data.user));
+                    localStorage.removeItem('whatsappUser');
+                    checkAuthState();
+                    closeLoginModal();
+                    alert("مرحباً بك! تم تسجيل الدخول بواسطة Google بنجاح.");
+                }
+            } catch(e) {
+                alert("فشلت عملية التحقق من حساب جوجل الخاص بك.");
+            }
+        }
+
+        async function sendWhatsAppOTP() {
+            const phone = document.getElementById('wa-phone').value.trim();
+            if(!phone) return alert("الرجاء إدخال رقم الهاتف أولاً");
+            try {
+                const response = await fetch('/api/auth/whatsapp/send', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({phone: phone})
+                });
+                const data = await response.json();
+                if(data.success) {
+                    alert(data.message);
+                    document.getElementById('wa-code-area').classList.remove('hidden');
+                    if(data.fallback) {
+                        document.getElementById('fallback-notification').style.display = 'block';
+                        document.getElementById('fallback-code').innerText = data.code;
+                    } else {
+                        document.getElementById('fallback-notification').style.display = 'none';
+                    }
+                }
+            } catch(e) { alert("خطأ بإرسال الكود"); }
+        }
+
+        async function verifyWhatsAppOTP() {
+            const phone = document.getElementById('wa-phone').value.trim();
+            const code = document.getElementById('wa-code').value.trim();
+            if(!code) return alert("الرجاء إدخال رمز التحقق");
+            try {
+                const response = await fetch('/api/auth/whatsapp/verify', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({phone: phone, code: code})
+                });
+                const data = await response.json();
+                if(data.success) {
+                    const userData = {
+                        name: `مستخدم واتساب (${phone.slice(-4)})`,
+                        picture: 'https://cdn-icons-png.flaticon.com/512/124/124034.png',
+                        authType: 'whatsapp'
+                    };
+                    localStorage.setItem('whatsappUser', JSON.stringify(userData));
+                    localStorage.removeItem('googleUser');
+                    checkAuthState();
+                    closeLoginModal();
+                    alert("تم تسجيل الدخول بنجاح!");
+                }
+            } catch(e) { alert("كود التحقق غير صحيح!"); }
+        }
+
+        function checkAuthState() {
+            const googleUser = localStorage.getItem('googleUser');
+            const waUser = localStorage.getItem('whatsappUser');
+            const loginBtn = document.getElementById('login-btn');
+            const userInfo = document.getElementById('user-info');
+            const displayUsername = document.getElementById('display-username');
+            const userAvatar = document.getElementById('user-avatar');
+            const dashboardLink = document.getElementById('dashboard-link');
+
+            if (googleUser || waUser) {
+                const user = JSON.parse(googleUser || waUser);
+                loginBtn.classList.add('hidden');
+                userInfo.classList.remove('hidden');
+                displayUsername.innerText = user.name;
+                userAvatar.src = user.picture;
+                // سجل التحقق مرتبط بحساب Google فقط (يحتاج بريد إلكتروني حقيقي)
+                dashboardLink.classList.toggle('hidden', !googleUser);
+            } else {
+                loginBtn.classList.remove('hidden');
+                userInfo.classList.add('hidden');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('googleUser');
+            localStorage.removeItem('whatsappUser');
+            checkAuthState();
+        }
+
+        // ============================================================
+        //  محاكي هجمات التصيّد التعليمي (Phishing Simulator)
+        // ============================================================
+        const SIM_SCENARIOS = [
+            {
+                id: 1,
+                sender: "support@paypal-secure-login.com",
+                icon: "fa-envelope-open-text",
+                subject: "تنبيه: يرجى تحديث بيانات حسابك خلال 24 ساعة",
+                body: "عزيزي العميل، تم رصد نشاط غير معتاد على حسابك. اضغط على الرابط أدناه فوراً لتأكيد هويتك وتجنب إيقاف الحساب.",
+                isPhishing: true,
+                explanation: "النطاق (paypal-secure-login.com) ليس نطاق PayPal الرسمي، والرسالة تستخدم أسلوب الاستعجال والتهديد بإيقاف الحساب، وهو نمط كلاسيكي في التصيد الإلكتروني."
+            },
+            {
+                id: 2,
+                sender: "no-reply@github.com",
+                icon: "fa-code-branch",
+                subject: "تأكيد تسجيل الدخول الجديد إلى حسابك",
+                body: "تم تسجيل الدخول إلى حسابك من متصفح Chrome على نظام Windows. إذا لم تكن أنت من قام بذلك، يمكنك مراجعة إعدادات الأمان من داخل حسابك مباشرة.",
+                isPhishing: false,
+                explanation: "رسالة تنبيه أمني اعتيادية من نطاق رسمي معروف، ولا تحتوي على ضغط أو تهديد أو طلب لإدخال بيانات حساسة عبر رابط خارجي."
+            },
+            {
+                id: 3,
+                sender: "prize@free-gift-rewards.net",
+                icon: "fa-gift",
+                subject: "🎉 مبروك! لقد فزت بجائزة آيفون 16 برو",
+                body: "تم اختيار رقمك عشوائياً للفوز بجائزة قيمة. أدخل بياناتك الشخصية ورقم بطاقتك لدفع رسوم الشحن الرمزية واستلام جائزتك الآن.",
+                isPhishing: true,
+                explanation: "الوعد بجائزة مقابل 'رسوم رمزية' وطلب بيانات البطاقة البنكية هو أسلوب احتيال شائع يعتمد على الطمع لاستدراج الضحية."
+            },
+            {
+                id: 4,
+                sender: "billing@netflix.com",
+                icon: "fa-clapperboard",
+                subject: "فاتورتك الشهرية جاهزة للعرض",
+                body: "مرحباً، يمكنك الاطلاع على تفاصيل فاتورتك الأخيرة وسجل المدفوعات من خلال تسجيل الدخول إلى حسابك عبر التطبيق أو الموقع الرسمي مباشرة.",
+                isPhishing: false,
+                explanation: "لا يوجد رابط مباشر مشبوه ولا طلب لإدخال بيانات، والرسالة توجه المستخدم للدخول من التطبيق أو الموقع الرسمي بنفسه بدلاً من رابط مضمّن."
+            },
+            {
+                id: 5,
+                sender: "delivery@aramex-shipment-alert.info",
+                icon: "fa-truck-fast",
+                subject: "تعذر تسليم شحنتك - مطلوب دفع رسوم إضافية",
+                body: "لم نتمكن من توصيل شحنتك بسبب رسوم جمركية غير مدفوعة. يرجى الضغط على الرابط وإدخال بيانات بطاقتك لإتمام عملية الدفع خلال ساعتين وإلا سيتم إرجاع الشحنة.",
+                isPhishing: true,
+                explanation: "انتحال صفة شركة شحن معروفة عبر نطاق غير رسمي، مع ضغط زمني (خلال ساعتين) وطلب دفع فوري ببيانات البطاقة - علامات تصيّد واضحة."
+            },
+            {
+                id: 6,
+                sender: "team@slack.com",
+                icon: "fa-message",
+                subject: "دعوة للانضمام إلى مساحة عمل جديدة",
+                body: "قام أحد الزملاء بدعوتك للانضمام إلى مساحة عمل على Slack. يمكنك قبول الدعوة من داخل التطبيق الرسمي أو تجاهل هذه الرسالة إن لم تكن تتوقعها.",
+                isPhishing: false,
+                explanation: "دعوة عمل اعتيادية من نطاق رسمي معروف، ولا تتضمن أي ضغط أو تهديد أو طلب بيانات حساسة، وتترك الخيار للمستخدم بوضوح."
+            }
+        ];
+
+        let simState = {};
+
+        function resetSimulator() {
+            simState = { answered: {}, score: 0 };
+            document.getElementById('sim-score').innerText = '0';
+            document.getElementById('sim-total').innerText = SIM_SCENARIOS.length;
+            renderSimulatorCards();
+        }
+
+        function renderSimulatorCards() {
+            const container = document.getElementById('sim-cards-container');
+            container.innerHTML = '';
+            SIM_SCENARIOS.forEach(sc => {
+                const card = document.createElement('div');
+                card.className = "sim-card p-5 space-y-3";
+                card.id = `sim-card-${sc.id}`;
+                card.innerHTML = `
+                    <div class="flex items-center gap-3 border-b border-slate-800/60 pb-3">
+                        <div class="bg-slate-900 border border-purple-500/30 text-purple-400 w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
+                            <i class="fa-solid ${sc.icon}"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="text-[11px] text-slate-500 font-mono truncate" dir="ltr">${sc.sender}</div>
+                            <div class="text-sm font-bold text-slate-200 truncate">${sc.subject}</div>
+                        </div>
+                    </div>
+                    <p class="text-xs md:text-sm text-slate-400 leading-relaxed">${sc.body}</p>
+                    <div class="flex gap-2 pt-2">
+                        <button onclick="answerSim(${sc.id}, true)" class="sim-flag-btn flex-1 bg-slate-950 border border-slate-800 hover:border-rose-500/50 text-slate-300 py-2.5 rounded-xl text-xs font-bold transition">
+                            <i class="fa-solid fa-triangle-exclamation ml-1 text-rose-500"></i> رسالة تصيّد
+                        </button>
+                        <button onclick="answerSim(${sc.id}, false)" class="sim-flag-btn flex-1 bg-slate-950 border border-slate-800 hover:border-emerald-500/50 text-slate-300 py-2.5 rounded-xl text-xs font-bold transition">
+                            <i class="fa-solid fa-circle-check ml-1 text-emerald-500"></i> رسالة حقيقية
+                        </button>
+                    </div>
+                    <div id="sim-feedback-${sc.id}" class="hidden text-xs leading-relaxed p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-400"></div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function answerSim(id, userSaysPhishing) {
+            if (simState.answered[id] !== undefined) return; // منع إعادة الإجابة على نفس الرسالة
+            const scenario = SIM_SCENARIOS.find(s => s.id === id);
+            if (!scenario) return;
+
+            const isCorrect = userSaysPhishing === scenario.isPhishing;
+            simState.answered[id] = true;
+            if (isCorrect) simState.score += 1;
+
+            document.getElementById('sim-score').innerText = simState.score;
+
+            const card = document.getElementById(`sim-card-${id}`);
+            card.classList.add(isCorrect ? 'sim-verdict-correct' : 'sim-verdict-wrong');
+
+            const buttons = card.querySelectorAll('.sim-flag-btn');
+            buttons.forEach(btn => btn.disabled = true);
+            buttons[userSaysPhishing ? 0 : 1].classList.add(userSaysPhishing ? 'selected-fake' : 'selected-real');
+
+            const feedback = document.getElementById(`sim-feedback-${id}`);
+            feedback.classList.remove('hidden');
+            const verdictLabel = scenario.isPhishing ? 'رسالة تصيّد احتيالي' : 'رسالة حقيقية وآمنة';
+            const resultIcon = isCorrect ? '✅ إجابة صحيحة' : '❌ إجابة غير دقيقة';
+            feedback.innerHTML = `<strong class="${isCorrect ? 'text-emerald-400' : 'text-rose-400'}">${resultIcon}</strong> — التصنيف الحقيقي: <strong class="text-slate-200">${verdictLabel}</strong><br><span class="text-slate-500">${scenario.explanation}</span>`;
+        }
+
+        // ============================================================
+        //  فحص مدى أمان وفعالية كلمة السر (Password Strength Checker)
+        //  يعمل بالكامل داخل المتصفح — لا يتم إرسال كلمة السر لأي خادم إطلاقاً
+        // ============================================================
+
+        // مجموعة صغيرة فورية (تعمل فوراً قبل اكتمال تحميل القاعدة الكبيرة أو في حال فشل التحميل)
+        const FALLBACK_COMMON_PASSWORDS = [
+            "123456", "password", "123456789", "12345678", "qwerty", "111111",
+            "123123", "abc123", "iloveyou", "admin", "welcome", "monkey",
+            "letmein", "000000", "1234567", "12345", "1234567890", "password1",
+            "qwerty123", "1q2w3e4r", "dragon", "master", "sunshine", "football",
+            "asdfgh", "123321", "666666", "654321", "trustno1", "starwars",
+            "princess", "superman", "batman", "hunter", "freedom", "whatever"
+        ];
+
+        // قاعدة الكلمات الشائعة الكبيرة (100,000+ كلمة) تُحمَّل بشكل غير متزامن (Lazy Load)
+        // من ملف ثابت خفيف الحجم بعد الضغط (Gzip)، بدلاً من تضمينها في الصفحة مباشرة،
+        // حفاظاً على سرعة التحميل الأولي للصفحة (خصوصاً على الجوال).
+        const PW_DB_CACHE_KEY = 'sv_common_pw_db_v1';
+        let commonPasswordsSet = new Set(FALLBACK_COMMON_PASSWORDS);
+        let commonPasswordsReady = false;
+
+        async function loadCommonPasswordsDB() {
+            const statusEl = document.getElementById('pw-db-status');
+            try {
+                let text = null;
+                try {
+                    text = sessionStorage.getItem(PW_DB_CACHE_KEY);
+                } catch (e) { /* التخزين المحلي قد يكون معطّلاً - نتجاهل الخطأ */ }
+
+                if (!text) {
+                    const res = await fetch('/static/common-passwords.txt');
+                    if (!res.ok) throw new Error('تعذّر تحميل قاعدة البيانات');
+                    text = await res.text();
+                    try { sessionStorage.setItem(PW_DB_CACHE_KEY, text); } catch (e) { /* تجاهل امتلاء التخزين */ }
+                }
+
+                const words = text.split('\n').filter(Boolean);
+                commonPasswordsSet = new Set(words);
+                commonPasswordsReady = true;
+                if (statusEl) {
+                    statusEl.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-500"></i> تم تحميل قاعدة تضم ${commonPasswordsSet.size.toLocaleString('ar-EG')} كلمة سر شائعة`;
+                }
+            } catch (e) {
+                if (statusEl) {
+                    statusEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-500"></i> تعذّر تحميل القاعدة الكاملة، يتم الاعتماد على قائمة مصغّرة مؤقتاً`;
+                }
+            }
+            // أعِد تحليل كلمة السر الحالية إن وُجدت بعد اكتمال التحميل
+            analyzePasswordLive();
+        }
+
+        // ===== أنماط لوحة المفاتيح (لاتيني وعربي) لرصد كلمات مثل qwerty وضصثقف =====
+        const KEYBOARD_ROWS = [
+            "qwertyuiop", "asdfghjkl", "zxcvbnm", "1234567890",
+            "ضصثقفغعهخحجد", "شسيبلاتنمكط", "ئءؤرلاىةوزظ"
+        ];
+
+        // خريطة عكسية مبسّطة للـ leetspeak لتحويل الأحرف البديلة لأصلها قبل مطابقتها بالقاموس
+        const LEET_REVERSE_MAP = { '@': 'a', '0': 'o', '1': 'i', '3': 'e', '$': 's', '5': 's', '7': 't', '!': 'i' };
+
+        function normalizeForDictionary(password) {
+            let s = password.toLowerCase();
+            let out = '';
+            for (const ch of s) out += (LEET_REVERSE_MAP[ch] !== undefined ? LEET_REVERSE_MAP[ch] : ch);
+            return out;
+        }
+
+        function detectCommonWord(password) {
+            if (!password) return null;
+            const lower = password.toLowerCase();
+            if (commonPasswordsSet.has(lower)) return lower;
+
+            const normalized = normalizeForDictionary(password);
+            if (commonPasswordsSet.has(normalized)) return normalized;
+
+            // إزالة الأرقام/الرموز من البداية والنهاية (نمط شائع: "Password123!" أو "2023summer")
+            const stripped = normalized.replace(/^[^a-z\u0600-\u06FF]+|[^a-z\u0600-\u06FF]+$/g, '');
+            if (stripped && stripped.length >= 4 && commonPasswordsSet.has(stripped)) return stripped;
+
+            return null;
+        }
+
+        function detectRepetition(password) {
+            // تكرار حرف واحد 3 مرات فأكثر (aaa، ججج)
+            if (/(.)\1{2,}/.test(password)) return true;
+            // تكرار مقطع من حرفين أو ثلاثة (ababab، abcabc)
+            if (/(..+?)\1{1,}/.test(password) && password.length >= 4) {
+                const m = password.match(/(.{2,4})\1+/);
+                if (m && m[0].length >= 4) return true;
+            }
+            return false;
+        }
+
+        function detectSequence(password) {
+            const s = password.toLowerCase();
+            let runUp = 1, runDown = 1;
+            for (let i = 1; i < s.length; i++) {
+                const a = s.charCodeAt(i - 1), b = s.charCodeAt(i);
+                runUp = (b === a + 1) ? runUp + 1 : 1;
+                runDown = (b === a - 1) ? runDown + 1 : 1;
+                if (runUp >= 3 || runDown >= 3) return true; // مثال: 123، abc، 987، cba
+            }
+            return false;
+        }
+
+        function detectKeyboardPattern(password) {
+            const s = password.toLowerCase();
+            for (const row of KEYBOARD_ROWS) {
+                const rowLower = row.toLowerCase();
+                const rowRev = rowLower.split('').reverse().join('');
+                for (let len = Math.min(6, rowLower.length); len >= 4; len--) {
+                    for (let i = 0; i + len <= rowLower.length; i++) {
+                        const chunk = rowLower.slice(i, i + len);
+                        const chunkRev = rowRev.slice(i, i + len);
+                        if (s.includes(chunk) || s.includes(chunkRev)) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function togglePasswordVisibility() {
+            const input = document.getElementById('password-input');
+            const btn = document.getElementById('pw-toggle-btn');
+            if (input.type === 'password') {
+                input.type = 'text';
+                btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+            } else {
+                input.type = 'password';
+                btn.innerHTML = '<i class="fa-solid fa-eye"></i>';
+            }
+        }
+
+        function formatDuration(seconds) {
+            if (seconds < 1) return "أقل من ثانية";
+            const units = [
+                { label: "قرون", secs: 100 * 365 * 24 * 3600 },
+                { label: "سنة", secs: 365 * 24 * 3600 },
+                { label: "شهر", secs: 30 * 24 * 3600 },
+                { label: "يوم", secs: 24 * 3600 },
+                { label: "ساعة", secs: 3600 },
+                { label: "دقيقة", secs: 60 },
+            ];
+            for (const u of units) {
+                if (seconds >= u.secs) {
+                    const value = seconds / u.secs;
+                    if (value > 1_000_000) return "أكثر من مليون " + u.label;
+                    return Math.round(value).toLocaleString('ar-EG') + " " + u.label;
+                }
+            }
+            return Math.round(seconds) + " ثانية";
+        }
+
+        // سيناريوهات هجوم واقعية مختلفة (محاولات في الثانية)
+        const ATTACK_SCENARIOS = {
+            online: 100 / 3600,          // تسجيل دخول عبر الإنترنت مع حماية/تحديد محاولات: 100 محاولة/ساعة
+            offlineSlow: 10_000,          // تجزئة بطيئة موصى بها (bcrypt/scrypt/argon2) على عتاد عادي
+            offlineFast: 10_000_000_000,  // تجزئة سريعة غير محمية (MD5/SHA1) على مجموعة GPU حديثة
+        };
+
+        function estimateSecondsFromEntropy(entropyBits, guessesPerSecond) {
+            const combinations = Math.pow(2, entropyBits);
+            return combinations / guessesPerSecond / 2; // بالمتوسط نصف فراغ الاحتمالات
+        }
+
+        function generateSuggestions(password, flags) {
+            const tips = [];
+            if (!password) return tips;
+            if (flags.isCommon) tips.push("هذه كلمة سر شائعة جداً ومعروفة لدى المهاجمين — استبدلها بالكامل ولا تكتفِ بتعديل بسيط عليها.");
+            if (password.length < 12) tips.push("أطِل كلمة السر إلى 12 حرفاً على الأقل — الطول أهم عامل في رفع الإنتروبيا وزمن الكسر.");
+            if (!flags.hasUpper) tips.push("أضف حرفاً كبيراً واحداً على الأقل (A-Z).");
+            if (!flags.hasLower) tips.push("أضف حرفاً صغيراً واحداً على الأقل (a-z).");
+            if (!flags.hasDigit) tips.push("أضف رقماً واحداً على الأقل.");
+            if (!flags.hasSymbol) tips.push("أضف رمزاً خاصاً واحداً على الأقل (!@#$%...).");
+            if (flags.hasSequence) tips.push("تجنّب التسلسلات المتوقعة مثل 123 أو abc، ووزّع الأرقام والحروف بشكل عشوائي.");
+            if (flags.hasRepetition) tips.push("تجنّب تكرار نفس الحرف أو نفس المقطع عدة مرات متتالية.");
+            if (flags.hasKeyboardPattern) tips.push("تجنّب أنماط لوحة المفاتيح المتتالية مثل qwerty أو ضصثقف.");
+            if (tips.length === 0) tips.push("كلمة السر جيدة من الناحية الفنية — تذكّر أيضاً عدم إعادة استخدامها في أكثر من موقع، وفعّل التحقق بخطوتين (2FA) حيثما أمكن.");
+            return tips;
+        }
+
+        let pwAnalyzeTimer = null;
+        function analyzePasswordLive() {
+            clearTimeout(pwAnalyzeTimer);
+            pwAnalyzeTimer = setTimeout(runPasswordAnalysis, 100);
+        }
+
+        function runPasswordAnalysis() {
+            const password = document.getElementById('password-input').value;
+            const strengthBar = document.getElementById('pw-strength-bar');
+            const strengthLabel = document.getElementById('pw-strength-label');
+            const strengthPercentEl = document.getElementById('pw-strength-percent');
+            const entropyEl = document.getElementById('pw-entropy');
+            const criteriaList = document.getElementById('pw-criteria-list');
+            const issuesBox = document.getElementById('pw-issues-box');
+            const issuesList = document.getElementById('pw-issues-list');
+            const suggestionsBox = document.getElementById('pw-suggestions-box');
+            const suggestionsList = document.getElementById('pw-suggestions-list');
+
+            const hasLower = /[a-z]/.test(password);
+            const hasUpper = /[A-Z]/.test(password);
+            const hasDigit = /[0-9]/.test(password);
+            const hasSymbol = /[^a-zA-Z0-9\u0600-\u06FF]/.test(password);
+            const hasArabic = /[\u0600-\u06FF]/.test(password);
+            const isLongEnough = password.length >= 12;
+
+            const commonMatch = detectCommonWord(password);
+            const isCommon = !!commonMatch;
+            const hasSequential = detectSequence(password);
+            const hasRepeats = detectRepetition(password);
+            const hasKeyboardPattern = detectKeyboardPattern(password);
+
+            // حساب فراغ الاحتمالات (Pool Size) لتقدير الإنتروبيا بطريقة Shannon التقليدية
+            let poolSize = 0;
+            if (hasLower) poolSize += 26;
+            if (hasUpper) poolSize += 26;
+            if (hasDigit) poolSize += 10;
+            if (hasSymbol) poolSize += 32;
+            if (hasArabic) poolSize += 36;
+            if (poolSize === 0) poolSize = 1;
+
+            let entropyBits = password.length > 0 ? password.length * Math.log2(poolSize) : 0;
+
+            // خصومات على الإنتروبيا الفعلية عند وجود أنماط يسهل تخمينها (كما تفعل أدوات مثل zxcvbn تقريبياً)
+            if (isCommon) entropyBits = Math.min(entropyBits, 10);
+            if (hasKeyboardPattern) entropyBits -= 12;
+            if (hasSequential) entropyBits -= 8;
+            if (hasRepeats) entropyBits -= 8;
+            entropyBits = Math.max(entropyBits, password ? 1 : 0);
+
+            const criteria = [
+                { ok: password.length >= 8, label: "8 أحرف على الأقل" },
+                { ok: isLongEnough, label: "12 حرفاً أو أكثر (موصى به)" },
+                { ok: hasUpper, label: "تحتوي حرفاً كبيراً (A-Z)" },
+                { ok: hasLower, label: "تحتوي حرفاً صغيراً (a-z)" },
+                { ok: hasDigit, label: "تحتوي رقماً واحداً على الأقل" },
+                { ok: hasSymbol, label: "تحتوي رمزاً خاصاً (!@#$...)" },
+                { ok: !isCommon, label: "ليست من كلمات السر الشائعة" },
+                { ok: !hasSequential, label: "لا تحتوي تسلسلاً رقمياً/أبجدياً واضحاً" },
+                { ok: !hasRepeats, label: "لا تحتوي تكراراً واضحاً لحرف أو مقطع" },
+                { ok: !hasKeyboardPattern, label: "لا تحتوي نمط لوحة مفاتيح (qwerty، ضصثقف...)" }
+            ];
+
+            criteriaList.innerHTML = '';
+            criteria.forEach(c => {
+                const li = document.createElement('li');
+                li.className = `flex items-center gap-2 p-2 rounded-lg ${c.ok ? 'text-emerald-400 bg-emerald-950/20' : 'text-slate-500 bg-slate-950/40'}`;
+                li.innerHTML = `<i class="fa-solid ${c.ok ? 'fa-circle-check' : 'fa-circle-xmark'}"></i> ${c.label}`;
+                criteriaList.appendChild(li);
+            });
+
+            // المشاكل المحددة المكتشفة
+            const issues = [];
+            if (isCommon) issues.push(`تحتوي كلمة السر على كلمة شائعة معروفة${commonMatch ? ' ("' + commonMatch + '")' : ''} موجودة في قواعد بيانات كلمات المرور المسرَّبة.`);
+            if (hasSequential) issues.push("تحتوي على تسلسل متوقّع من الأرقام أو الحروف (مثل 123 أو abc).");
+            if (hasRepeats) issues.push("تحتوي على تكرار واضح لحرف واحد أو مقطع متكرر.");
+            if (hasKeyboardPattern) issues.push("تحتوي على نمط متتالٍ من لوحة المفاتيح (مثل qwerty أو ضصثقف).");
+            if (issues.length > 0 && password) {
+                issuesBox.classList.remove('hidden');
+                issuesList.innerHTML = issues.map(i => `<li class="flex items-start gap-2"><i class="fa-solid fa-circle-exclamation mt-0.5 shrink-0"></i><span>${i}</span></li>`).join('');
+            } else {
+                issuesBox.classList.add('hidden');
+            }
+
+            // الاقتراحات
+            if (password) {
+                const tips = generateSuggestions(password, { hasUpper, hasLower, hasDigit, hasSymbol, isCommon, hasSequential, hasRepeats, hasKeyboardPattern });
+                suggestionsBox.classList.remove('hidden');
+                suggestionsList.innerHTML = tips.map(t => `<li class="flex items-start gap-2"><i class="fa-solid fa-check mt-0.5 shrink-0"></i><span>${t}</span></li>`).join('');
+            } else {
+                suggestionsBox.classList.add('hidden');
+            }
+
+            if (!password) {
+                strengthBar.style.width = '0%';
+                strengthBar.style.background = '#4C5266';
+                strengthLabel.innerText = '-';
+                strengthLabel.className = 'text-xs font-black text-slate-500';
+                strengthPercentEl.innerText = '0%';
+                entropyEl.innerText = '0 bits';
+                document.getElementById('pw-crack-online').innerText = '-';
+                document.getElementById('pw-crack-offline-slow').innerText = '-';
+                document.getElementById('pw-crack-offline-fast').innerText = '-';
+                return;
+            }
+
+            // النتيجة النهائية تُبنى على الإنتروبيا الفعلية (بعد الخصومات) وليس فقط عدّ المعايير المستوفاة
+            let percent = Math.max(0, Math.min(100, Math.round((entropyBits / 90) * 100)));
+            if (isCommon) percent = Math.min(percent, 8);
+
+            let label, color;
+            if (percent <= 20) { label = 'ضعيفة جداً'; color = '#CC7683'; }
+            else if (percent <= 40) { label = 'ضعيفة'; color = '#DDA560'; }
+            else if (percent <= 65) { label = 'متوسطة'; color = '#D19D4C'; }
+            else if (percent <= 85) { label = 'قوية'; color = '#7BB8EE'; }
+            else { label = 'قوية جداً'; color = '#62AC8B'; }
+
+            strengthBar.style.width = percent + '%';
+            strengthBar.style.background = color;
+            strengthLabel.innerText = label;
+            strengthLabel.style.color = color;
+            strengthPercentEl.innerText = percent + '%';
+            entropyEl.innerText = Math.round(entropyBits) + ' bits';
+
+            document.getElementById('pw-crack-online').innerText = formatDuration(estimateSecondsFromEntropy(entropyBits, ATTACK_SCENARIOS.online));
+            document.getElementById('pw-crack-offline-slow').innerText = formatDuration(estimateSecondsFromEntropy(entropyBits, ATTACK_SCENARIOS.offlineSlow));
+            document.getElementById('pw-crack-offline-fast').innerText = formatDuration(estimateSecondsFromEntropy(entropyBits, ATTACK_SCENARIOS.offlineFast));
+        }
+
+        // ============================================================
+        //  مولّد كلمات سر قوية عشوائياً (Cryptographically Secure)
+        // ============================================================
+        const GEN_CHARSETS = {
+            upper: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            lower: "abcdefghijklmnopqrstuvwxyz",
+            digits: "0123456789",
+            symbols: "!@#$%^&*()-_=+[]{}?"
+        };
+        const AMBIGUOUS_CHARS = "0O1lI|";
+
+        function secureRandomInt(maxExclusive) {
+            const array = new Uint32Array(1);
+            const limit = Math.floor(0xFFFFFFFF / maxExclusive) * maxExclusive;
+            let x;
+            do { crypto.getRandomValues(array); x = array[0]; } while (x >= limit);
+            return x % maxExclusive;
+        }
+
+        function generateStrongPassword() {
+            const length = parseInt(document.getElementById('pw-gen-length').value, 10);
+            const useUpper = document.getElementById('pw-gen-upper').checked;
+            const useLower = document.getElementById('pw-gen-lower').checked;
+            const useDigits = document.getElementById('pw-gen-digits').checked;
+            const useSymbols = document.getElementById('pw-gen-symbols').checked;
+            const excludeAmbiguous = document.getElementById('pw-gen-exclude-ambiguous').checked;
+            const errorEl = document.getElementById('pw-gen-error');
+
+            const groups = [];
+            if (useUpper) groups.push(GEN_CHARSETS.upper);
+            if (useLower) groups.push(GEN_CHARSETS.lower);
+            if (useDigits) groups.push(GEN_CHARSETS.digits);
+            if (useSymbols) groups.push(GEN_CHARSETS.symbols);
+
+            if (groups.length === 0) {
+                errorEl.innerText = 'اختر نوعاً واحداً على الأقل من الأحرف قبل التوليد.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            errorEl.classList.add('hidden');
+
+            const clean = (s) => excludeAmbiguous ? s.split('').filter(c => !AMBIGUOUS_CHARS.includes(c)).join('') : s;
+            const cleanedGroups = groups.map(clean).filter(g => g.length > 0);
+            const fullPool = cleanedGroups.join('');
+
+            const resultChars = [];
+            // نضمن ظهور حرف واحد على الأقل من كل فئة مختارة لرفع الجودة الفعلية
+            cleanedGroups.forEach(g => resultChars.push(g[secureRandomInt(g.length)]));
+            while (resultChars.length < length) {
+                resultChars.push(fullPool[secureRandomInt(fullPool.length)]);
+            }
+            // خلط عشوائي آمن (Fisher-Yates) باستخدام crypto
+            for (let i = resultChars.length - 1; i > 0; i--) {
+                const j = secureRandomInt(i + 1);
+                [resultChars[i], resultChars[j]] = [resultChars[j], resultChars[i]];
+            }
+
+            const finalPassword = resultChars.slice(0, length).join('');
+            document.getElementById('pw-gen-output').value = finalPassword;
+        }
+
+        function copyGeneratedPassword() {
+            const output = document.getElementById('pw-gen-output');
+            const btn = document.getElementById('pw-gen-copy-btn');
+            if (!output.value) return;
+            navigator.clipboard.writeText(output.value).then(() => {
+                const original = btn.innerHTML;
+                btn.innerHTML = '<i class="fa-solid fa-check text-emerald-400"></i>';
+                setTimeout(() => { btn.innerHTML = original; }, 1200);
+            }).catch(() => {
+                output.select();
+                document.execCommand('copy');
+            });
+        }
+
+        window.onload = function() {
+            refreshStats();
+            checkAuthState();
+            resetSimulator();
+            // تحميل قاعدة كلمات السر الشائعة بعد رسم الصفحة مباشرة دون حجب التحميل الأولي
+            setTimeout(loadCommonPasswordsDB, 50);
+
+            const initialPage = (location.hash || '').replace('#', '');
+            if (initialPage && document.getElementById(initialPage)) {
+                showPage(initialPage);
+            }
+        };
+
+    </script>
+</body>
+</html>

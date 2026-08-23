@@ -1,0 +1,11 @@
+fastapi
+jinja2
+Pillow
+python-multipart
+uvicorn
+requests
+google-auth
+firebase-admin
+python-whois
+qrcode
+google-genai

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تحميل تطبيق Smart Verify للجوال</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate:  { 50:'#F5F6F8',100:'#E9EBEF',200:'#D3D7DE',300:'#AEB4C0',400:'#868EA0',500:'#656D80',600:'#4C5266',700:'#383D4F',800:'#23273A',900:'#141623',950:'#0A0B12' },
+                        cyan:   { 50:'#F1F8FE',100:'#E3F1FC',200:'#CBE4FA',300:'#A8D2F5',400:'#7BB8EE',500:'#5B9FE0',600:'#4483C2',700:'#35659A',800:'#2B4E78',900:'#23405F',950:'#172A40' },
+                        purple: { 50:'#F8F5FD',100:'#F0EBFB',200:'#E3DCF7',300:'#CFC5F0',400:'#B3A6E8',500:'#9A8AD9',600:'#7E6EC0',700:'#64579E',800:'#4F4480',900:'#403768',950:'#292245' },
+                        indigo: { 50:'#F3F5FD',100:'#E7EBFA',200:'#D3DAF3',300:'#B8C4EF',400:'#93A3E4',500:'#7688D6',600:'#5C6EBE',700:'#4A599C',800:'#3C477C',900:'#303A62',950:'#1F2542' },
+                        emerald:{ 50:'#F1F9F5',100:'#E3F3EB',200:'#CDEBDD',300:'#A8D9C3',400:'#82C3A6',500:'#62AC8B',600:'#4C8E70',700:'#3D7259',800:'#305A47',900:'#1E362B',950:'#16261F' },
+                        amber:  { 50:'#FCF4E7',100:'#F8EAD3',200:'#F3DBB6',300:'#EBC895',400:'#E0B36E',500:'#D19D4C',600:'#B07E36',700:'#8C632A',800:'#6D4D22',900:'#543C1C',950:'#362813' },
+                        rose:   { 50:'#FBF1F2',100:'#F7E4E7',200:'#F1D2D6',300:'#E9B7BE',400:'#DE96A0',500:'#CC7683',600:'#AD5763',700:'#8A4550',800:'#6B363F',900:'#4F2830',950:'#331A1F' }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&display=swap');
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #0A0B12;
+            background-image:
+                radial-gradient(at 12% -10%, rgba(123, 184, 238, 0.14) 0px, transparent 55%),
+                radial-gradient(at 88% 110%, rgba(154, 138, 217, 0.10) 0px, transparent 55%);
+            color: #EDEFF3; min-height: 100vh;
+        }
+        .font-orbitron { font-family: 'Space Grotesk', 'Cairo', sans-serif; }
+        .neon-text { text-shadow: 0 0 18px rgba(123, 184, 238, 0.30); }
+        .glass-panel {
+            position: relative;
+            background: linear-gradient(165deg, rgba(255,255,255,0.075), rgba(255,255,255,0.02));
+            backdrop-filter: blur(26px) saturate(160%);
+            border: 1px solid rgba(255,255,255,0.10);
+            box-shadow: 0 24px 60px -24px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.09);
+        }
+        .glass-panel::before {
+            content: '';
+            position: absolute; inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(140deg, rgba(255,255,255,0.32), rgba(255,255,255,0) 45%);
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+        .qr-wrap {
+            background: #fff; padding: 14px; border-radius: 20px;
+            display: inline-block; box-shadow: 0 20px 50px -14px rgba(123,184,238,0.35);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-10">
+    <div class="max-w-2xl mx-auto space-y-8">
+
+        <div class="text-center space-y-3 pt-6">
+            <div class="w-16 h-16 mx-auto rounded-2xl bg-slate-900 border border-cyan-500/30 flex items-center justify-center text-cyan-400 text-2xl">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <h1 class="text-2xl md:text-3xl font-black font-orbitron neon-text">تطبيق Smart Verify للجوال</h1>
+            <p class="text-slate-400 text-sm">حمّل التطبيق مباشرة على جهازك الأندرويد — بدون الحاجة لمتجر Google Play</p>
+        </div>
+
+        {% if apk_url %}
+        <div class="glass-panel rounded-3xl p-8 text-center space-y-6">
+            <a href="{{ apk_url }}" class="inline-flex items-center gap-3 bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-8 py-4 rounded-2xl font-black text-lg transition duration-300 shadow-[0_0_25px_rgba(123, 184, 238,0.4)]">
+                <i class="fa-solid fa-download"></i> تحميل APK مباشرة
+            </a>
+
+            <div class="pt-4 border-t border-slate-800">
+                <p class="text-slate-500 text-xs mb-4">أو امسح الرمز التالي بجوالك مباشرة:</p>
+                <div class="qr-wrap">
+                    <img src="/api/download-qr" alt="QR Code لتحميل التطبيق" width="180" height="180">
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="glass-panel rounded-3xl p-8 text-center space-y-3 border-amber-500/20">
+            <i class="fa-solid fa-triangle-exclamation text-amber-500 text-3xl"></i>
+            <p class="text-slate-300 font-bold">رابط تحميل التطبيق غير مضبوط بعد على الخادم.</p>
+            <p class="text-slate-500 text-xs">صاحب المشروع: اضبط متغير البيئة <code class="text-cyan-400">APK_DOWNLOAD_URL</code> على Vercel بعد رفع ملف الـ APK.</p>
+        </div>
+        {% endif %}
+
+        <div class="glass-panel rounded-3xl p-6 md:p-8 space-y-5">
+            <h2 class="text-lg font-bold flex items-center gap-2">
+                <span class="w-1.5 h-4 bg-cyan-400 rounded-full"></span> خطوات التثبيت
+            </h2>
+            <ol class="space-y-4 text-sm text-slate-400">
+                <li class="flex gap-3">
+                    <span class="w-6 h-6 rounded-full bg-slate-900 border border-cyan-500/30 text-cyan-400 text-xs font-black flex items-center justify-center shrink-0">1</span>
+                    <span>اضغط زر التحميل أعلاه من متصفح جوالك، أو امسح رمز QR من جهاز آخر.</span>
+                </li>
+                <li class="flex gap-3">
+                    <span class="w-6 h-6 rounded-full bg-slate-900 border border-cyan-500/30 text-cyan-400 text-xs font-black flex items-center justify-center shrink-0">2</span>
+                    <span>بعد اكتمال التحميل، افتح الملف من إشعارات التنزيل.</span>
+                </li>
+                <li class="flex gap-3">
+                    <span class="w-6 h-6 rounded-full bg-slate-900 border border-cyan-500/30 text-cyan-400 text-xs font-black flex items-center justify-center shrink-0">3</span>
+                    <span>سيظهر تحذير "التثبيت من مصادر غير معروفة محظور" — هذا طبيعي لأي تطبيق خارج المتجر. اضغط <b class="text-slate-200">"الإعدادات"</b> بالتحذير نفسه، ثم فعّل <b class="text-slate-200">"السماح من هذا المصدر"</b>.</span>
+                </li>
+                <li class="flex gap-3">
+                    <span class="w-6 h-6 rounded-full bg-slate-900 border border-cyan-500/30 text-cyan-400 text-xs font-black flex items-center justify-center shrink-0">4</span>
+                    <span>ارجع واضغط تثبيت (Install). خلال ثوانٍ يظهر تطبيق Smart Verify على جهازك جاهزاً للاستخدام.</span>
+                </li>
+            </ol>
+            <div class="bg-slate-950/60 border border-emerald-500/20 rounded-2xl p-4 text-xs text-emerald-400/90 flex items-start gap-2">
+                <i class="fa-solid fa-shield-check mt-0.5"></i>
+                <span>هذا التحذير من أندرويد قياسي لأي تطبيق يُثبَّت خارج Google Play، وليس علامة خطر بحد ذاته — إذا كنت تثق بمصدر الرابط (كما هي الحال هنا).</span>
+            </div>
+        </div>
+
+        <a href="/" class="block text-center text-slate-500 hover:text-cyan-400 text-xs transition">
+            <i class="fa-solid fa-arrow-right"></i> العودة للموقع
+        </a>
+    </div>
+</body>
+</html>
